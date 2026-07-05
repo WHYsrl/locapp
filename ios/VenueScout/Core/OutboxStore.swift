@@ -9,6 +9,11 @@ actor OutboxStore {
         let id: UUID
         let createdAt: Date
         let request: IngestRequest
+        // All optional so previously persisted items keep decoding.
+        var localDraft: LocalLocationDraft?
+        var acceptedFields: [String: Bool]?
+        var lastError: String?
+        var lastAttemptAt: Date?
     }
 
     private let encoder: JSONEncoder
@@ -41,11 +46,51 @@ actor OutboxStore {
     }
 
     @discardableResult
-    func add(_ request: IngestRequest) throws -> PendingItem {
-        let item = PendingItem(id: UUID(), createdAt: Date(), request: request)
+    func add(
+        _ request: IngestRequest,
+        localDraft: LocalLocationDraft? = nil,
+        lastError: String? = nil
+    ) throws -> PendingItem {
+        let item = PendingItem(
+            id: UUID(),
+            createdAt: Date(),
+            request: request,
+            localDraft: localDraft,
+            acceptedFields: nil,
+            lastError: lastError,
+            lastAttemptAt: lastError == nil ? nil : Date()
+        )
+        try save(item)
+        return item
+    }
+
+    private func save(_ item: PendingItem) throws {
         let data = try encoder.encode(item)
         try data.write(to: fileURL(for: item.id), options: .atomic)
-        return item
+    }
+
+    private func item(id: UUID) -> PendingItem? {
+        guard let url = try? fileURL(for: id),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return try? decoder.decode(PendingItem.self, from: data)
+    }
+
+    /// Stores the reviewed on-device draft (and accept toggles) into the entry
+    /// so the reviewed state travels with the payload until it is re-sent.
+    func updateReview(id: UUID, draft: LocalLocationDraft?, accepted: [String: Bool]) {
+        guard var item = item(id: id) else { return }
+        item.localDraft = draft
+        item.acceptedFields = accepted
+        try? save(item)
+    }
+
+    /// Records the outcome of the last (failed) send attempt.
+    func recordError(id: UUID, message: String) {
+        guard var item = item(id: id) else { return }
+        item.lastError = message
+        item.lastAttemptAt = Date()
+        try? save(item)
     }
 
     func items() -> [PendingItem] {
@@ -83,6 +128,7 @@ actor OutboxStore {
                 remove(item.id)
                 sent += 1
             } catch {
+                recordError(id: item.id, message: error.localizedDescription)
                 failed += 1
             }
         }

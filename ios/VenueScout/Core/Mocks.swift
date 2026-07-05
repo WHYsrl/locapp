@@ -63,8 +63,8 @@ enum Mocks {
         visitStatus: .visitata,
         logistics: nil,
         effectiveLogistics: Logistics(
-            auto: true,
-            pullman: false,
+            auto: "sì",
+            pullman: "no",
             ztl: ZTLInfo(present: false, hours: nil, permits: nil),
             stopDifficulty: "media",
             privateParking: PrivateParking(spots: 40),
@@ -107,8 +107,8 @@ enum Mocks {
         thumbnailUrl: nil,
         visitStatus: .visitata,
         logistics: Logistics(
-            auto: true,
-            pullman: true,
+            auto: "sì, fino al cancello nord",
+            pullman: "sì, sosta breve al piazzale",
             ztl: ZTLInfo(present: true, hours: "7:30–19:30", permits: "richiesta preventiva al Comune"),
             stopDifficulty: "bassa",
             privateParking: PrivateParking(spots: 40),
@@ -194,7 +194,7 @@ enum Mocks {
                 extractedByAi: true
             )
         ],
-        usageSummary: UsageSummary(proposedCount: 3, usedCount: 1),
+        usageSummary: UsageSummary(proposta: true, utilizzata: true, entries: nil),
         createdAt: "2026-05-02T10:00:00Z",
         updatedAt: "2026-06-20T16:30:00Z"
     )

@@ -10,12 +10,14 @@ struct CaptureView: View {
 
     var body: some View {
         Form {
+            successSection
             recordingSection
             transcriptSection
             notesSection
             photoSection
             localPreviewSection
             submitSection
+            failureSection
         }
         .navigationTitle("Inserisci location")
         .sheet(isPresented: $showCamera) {
@@ -26,8 +28,17 @@ struct CaptureView: View {
         .sheet(isPresented: $viewModel.showDraftReview) {
             if let job = viewModel.job, let draft = job.extracted {
                 NavigationStack {
-                    DraftReviewView(jobId: job.id, draft: draft) {
-                        viewModel.clearAfterApply()
+                    DraftReviewView(jobId: job.id, draft: draft) { locationId in
+                        viewModel.clearAfterApply(locationId: locationId)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $viewModel.showOfflineReview) {
+            if let draft = viewModel.localDraft {
+                NavigationStack {
+                    OfflineDraftReviewView(draft: draft) { accepted in
+                        Task { await viewModel.saveOfflineReview(accepted: accepted) }
                     }
                 }
             }
@@ -227,6 +238,62 @@ struct CaptureView: View {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Shown when POST /ingest failed: specific error + clear next actions.
+    @ViewBuilder
+    private var failureSection: some View {
+        if let error = viewModel.submitError {
+            Section("Invio non riuscito") {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+
+                Button {
+                    Task { await viewModel.retrySubmit() }
+                } label: {
+                    Label("Riprova", systemImage: "arrow.clockwise")
+                }
+                .disabled(viewModel.isSubmitting)
+
+                if viewModel.localDraft != nil {
+                    Button {
+                        viewModel.showOfflineReview = true
+                    } label: {
+                        Label("Continua offline", systemImage: "wifi.slash")
+                    }
+                    .disabled(viewModel.isSubmitting)
+                }
+
+                Button {
+                    viewModel.dismissFailure()
+                } label: {
+                    Label("Chiudi (bozza resta in coda)", systemImage: "xmark.circle")
+                }
+                .disabled(viewModel.isSubmitting)
+            }
+        }
+    }
+
+    /// Shown after a draft is applied: confirmation and next steps, no dead end.
+    @ViewBuilder
+    private var successSection: some View {
+        if viewModel.didApplyDraft {
+            Section {
+                Label("Scheda applicata con successo.", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+
+                if let locationId = viewModel.lastAppliedLocationId {
+                    NavigationLink("Apri scheda location") {
+                        LocationDetailView(locationId: locationId)
+                    }
+                }
+
+                Button("Nuova acquisizione") {
+                    viewModel.startNewCapture()
+                }
             }
         }
     }

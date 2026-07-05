@@ -3,6 +3,7 @@ import Foundation
 // MARK: - Wire types
 
 /// Paginated list envelope: `{data:[...], meta:{page,per_page,total}}` (SPEC §4).
+/// Items are decoded individually (lossy) so one malformed record cannot blank the list.
 struct Paginated<T: Decodable & Sendable>: Decodable, Sendable {
     struct Meta: Decodable, Sendable {
         var page: Int?
@@ -18,6 +19,33 @@ struct Paginated<T: Decodable & Sendable>: Decodable, Sendable {
 
     var data: [T]
     var meta: Meta?
+
+    enum CodingKeys: String, CodingKey {
+        case data
+        case meta
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        data = try container.decode(LossyArray<T>.self, forKey: .data).elements
+        meta = try? container.decodeIfPresent(Meta.self, forKey: .meta)
+    }
+}
+
+/// Plain list envelope `{data:[...]}` used by non-paginated endpoints
+/// (usage, history, event shortlist, brief search). Extra sibling keys
+/// (`proposta`, `utilizzata`, `criteria`, ...) are ignored. Lossy per item.
+struct DataEnvelope<T: Decodable & Sendable>: Decodable, Sendable {
+    var data: [T]
+
+    enum CodingKeys: String, CodingKey {
+        case data
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        data = try container.decode(LossyArray<T>.self, forKey: .data).elements
+    }
 }
 
 struct ServerErrorEnvelope: Decodable, Sendable {
@@ -39,15 +67,39 @@ enum APIError: Error, LocalizedError {
         case .invalidResponse:
             return "Risposta del server non valida."
         case .http(let status, let code, let message):
-            var text = "Errore \(status)"
+            // Auth failures get an actionable hint instead of a bare status code.
+            if status == 401 || status == 403 {
+                return "Non autenticato: fai login in Impostazioni."
+            }
+            var text = "Errore server \(status)"
             if let code { text += " [\(code)]" }
             if let message { text += ": \(message)" }
             return text
         case .decoding(let error):
             return "Errore di lettura dati: \(error.localizedDescription)"
         case .transport(let error):
+            if let urlError = error as? URLError {
+                switch urlError.code {
+                case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+                    return "Rete non disponibile: controlla la connessione."
+                case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .badURL, .unsupportedURL:
+                    return "Server non raggiungibile: verifica l'URL API in Impostazioni."
+                case .timedOut:
+                    return "Il server non risponde (timeout): riprova più tardi."
+                default:
+                    break
+                }
+            }
             return "Errore di rete: \(error.localizedDescription)"
         }
+    }
+
+    /// True for auth failures (401/403) so the UI can point to Impostazioni.
+    var isAuthenticationError: Bool {
+        if case .http(let status, _, _) = self {
+            return status == 401 || status == 403
+        }
+        return false
     }
 }
 
@@ -299,11 +351,15 @@ actor APIClient {
     }
 
     func locationUsage(id: String) async throws -> [UsageEntry] {
-        try await send("GET", "locations/\(id)/usage")
+        // Response is `{data:[...], proposta, utilizzata}`, not a bare array.
+        let envelope: DataEnvelope<UsageEntry> = try await send("GET", "locations/\(id)/usage")
+        return envelope.data
     }
 
     func locationHistory(id: String) async throws -> [HistoryEntry] {
-        try await send("GET", "locations/\(id)/history")
+        // Response is `{data:[{type,at,data}]}`, not a bare array.
+        let envelope: DataEnvelope<HistoryEntry> = try await send("GET", "locations/\(id)/history")
+        return envelope.data
     }
 
     // MARK: Ingestion
@@ -323,7 +379,9 @@ actor APIClient {
     // MARK: Search
 
     func searchBrief(_ request: BriefSearchRequest) async throws -> [SearchResult] {
-        try await send("POST", "search/brief", body: request)
+        // Response is `{data:[...], criteria:{...}}`, not a bare array.
+        let envelope: DataEnvelope<SearchResult> = try await send("POST", "search/brief", body: request)
+        return envelope.data
     }
 
     // MARK: Projects & events
@@ -348,7 +406,9 @@ actor APIClient {
     }
 
     func eventLocations(eventId: String) async throws -> [EventLocation] {
-        try await send("GET", "events/\(eventId)/locations")
+        // Response is `{data:[...]}` with the joined location flattened per row.
+        let envelope: DataEnvelope<EventLocation> = try await send("GET", "events/\(eventId)/locations")
+        return envelope.data
     }
 
     func addEventLocation(eventId: String, locationId: String) async throws -> EventLocation {

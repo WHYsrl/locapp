@@ -11,6 +11,7 @@ final class SettingsViewModel {
     var isWorking = false
     var message: String?
     var outboxCount = 0
+    var outboxItems: [OutboxStore.PendingItem] = []
 
     func login() async {
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -39,14 +40,15 @@ final class SettingsViewModel {
     }
 
     func refreshOutbox() async {
-        outboxCount = await OutboxStore.shared.count()
+        outboxItems = await OutboxStore.shared.items()
+        outboxCount = outboxItems.count
     }
 
     func flushOutbox() async {
         isWorking = true
         defer { isWorking = false }
         let result = await OutboxStore.shared.flush()
-        outboxCount = await OutboxStore.shared.count()
+        await refreshOutbox()
         message = "Reinvio bozze: \(result.sent) inviate, \(result.failed) fallite."
     }
 }
@@ -63,12 +65,18 @@ struct SettingsView: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                InfoRow(label: "URL effettivo", value: effectiveAPIURLString)
                 Text("Predefinito: \(Config.defaultBaseURLString)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Section("Account") {
+                Label(
+                    viewModel.isLoggedIn ? "Connesso (token salvato)" : "Non autenticato",
+                    systemImage: viewModel.isLoggedIn ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark"
+                )
+                .foregroundStyle(viewModel.isLoggedIn ? .green : .orange)
                 if viewModel.isLoggedIn {
                     if let user = viewModel.currentUser {
                         InfoRow(label: "Utente", value: user.name ?? user.email)
@@ -108,6 +116,23 @@ struct SettingsView: View {
                     Task { await viewModel.flushOutbox() }
                 }
                 .disabled(viewModel.outboxCount == 0 || viewModel.isWorking)
+
+                ForEach(viewModel.outboxItems) { item in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(item.request.sourceType.rawValue.capitalized) · \(item.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.subheadline)
+                        if item.localDraft != nil {
+                            Text("Bozza locale rivista allegata")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let lastError = item.lastError {
+                            Text("Ultimo errore: \(lastError)")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
             }
 
             if let message = viewModel.message {
@@ -127,6 +152,18 @@ struct SettingsView: View {
         .task {
             await viewModel.refreshOutbox()
         }
+        .refreshable {
+            await viewModel.refreshOutbox()
+        }
+    }
+
+    /// Mirrors Config.apiBaseURL (trailing "/" trimmed + "/api/v1") but reads the
+    /// @AppStorage value so it updates live while the user edits the field.
+    private var effectiveAPIURLString: String {
+        var raw = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty { raw = Config.defaultBaseURLString }
+        while raw.hasSuffix("/") { raw.removeLast() }
+        return raw + "/api/v1"
     }
 }
 

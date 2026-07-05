@@ -187,10 +187,10 @@ struct LocationDetailView: View {
         if let logistics = location.displayLogistics {
             Section {
                 if let auto = logistics.auto {
-                    InfoRow(label: "Accesso auto", value: auto ? "sì" : "no")
+                    InfoRow(label: "Accesso auto", value: auto)
                 }
                 if let pullman = logistics.pullman {
-                    InfoRow(label: "Accesso pullman", value: pullman ? "sì" : "no")
+                    InfoRow(label: "Accesso pullman", value: pullman)
                 }
                 if let ztl = logistics.ztl, ztl.present == true {
                     InfoRow(label: "ZTL", value: ztl.hours ?? "presente")

@@ -4,8 +4,9 @@ import FoundationModels
 /// On-device pre-extraction of a rough location draft while the server job runs.
 /// Uses the Foundation Models framework (Apple Intelligence). Purely a preview:
 /// the authoritative draft is always the server's ExtractedLocationDraft.
+// Codable + Sendable so the outbox can persist the reviewed draft offline.
 @Generable
-struct LocalLocationDraft: Equatable {
+struct LocalLocationDraft: Equatable, Codable, Sendable {
     @Guide(description: "Nome della location; stringa vuota se non indicato")
     var name: String
 

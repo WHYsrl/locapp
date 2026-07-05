@@ -13,14 +13,15 @@ struct DraftFieldRow: Identifiable {
 struct DraftReviewView: View {
     let jobId: String
     let draft: ExtractedLocationDraft
-    var onApplied: () -> Void = {}
+    /// Called with the applied job's location id (if the server returned one).
+    var onApplied: (String?) -> Void = { _ in }
 
     @State private var accepted: [String: Bool] = [:]
     @State private var isApplying = false
     @State private var errorMessage: String?
     @Environment(\.dismiss) private var dismiss
 
-    init(jobId: String, draft: ExtractedLocationDraft, onApplied: @escaping () -> Void = {}) {
+    init(jobId: String, draft: ExtractedLocationDraft, onApplied: @escaping (String?) -> Void = { _ in }) {
         self.jobId = jobId
         self.draft = draft
         self.onApplied = onApplied
@@ -225,14 +226,119 @@ struct DraftReviewView: View {
         isApplying = true
         errorMessage = nil
         do {
-            _ = try await APIClient.shared.applyIngestion(id: jobId, accept: accept)
+            let applied = try await APIClient.shared.applyIngestion(id: jobId, accept: accept)
             isApplying = false
-            onApplied()
+            onApplied(applied.locationId)
             dismiss()
         } catch {
             isApplying = false
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Offline review
+
+/// Offline review of the on-device `LocalLocationDraft` when POST /ingest failed:
+/// field values are read-only, only the accept toggles can be changed. The chosen
+/// toggles are handed back so the outbox entry keeps the reviewed state.
+struct OfflineDraftReviewView: View {
+    let draft: LocalLocationDraft
+    var onSave: ([String: Bool]) -> Void = { _ in }
+
+    @State private var accepted: [String: Bool] = [:]
+    @Environment(\.dismiss) private var dismiss
+
+    private var rows: [DraftFieldRow] {
+        var result: [DraftFieldRow] = []
+        if !draft.name.isEmpty {
+            result.append(DraftFieldRow(id: "local.name", title: "Nome", value: draft.name, source: nil))
+        }
+        if !draft.city.isEmpty {
+            result.append(DraftFieldRow(id: "local.city", title: "Città", value: draft.city, source: nil))
+        }
+        if !draft.summary.isEmpty {
+            result.append(DraftFieldRow(id: "local.summary", title: "Sintesi", value: draft.summary, source: nil))
+        }
+        if draft.maxCapacity > 0 {
+            result.append(DraftFieldRow(id: "local.max_capacity", title: "Capienza max", value: String(draft.maxCapacity), source: nil))
+        }
+        if !draft.smartTags.isEmpty {
+            result.append(DraftFieldRow(id: "local.smart_tags", title: "Tag", value: draft.smartTags.joined(separator: ", "), source: nil))
+        }
+        return result
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Label("Bozza generata sul dispositivo: verrà allegata al reinvio quando torni online.", systemImage: "wifi.slash")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Section("Campi estratti") {
+                if rows.isEmpty {
+                    Text("Nessun campo estratto dalla bozza locale.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(rows) { row in
+                        Toggle(isOn: binding(for: row.id)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.title)
+                                    .font(.subheadline.weight(.medium))
+                                if !row.value.isEmpty {
+                                    Text(row.value)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !draft.openQuestions.isEmpty {
+                Section("Domande aperte") {
+                    ForEach(draft.openQuestions, id: \.self) { question in
+                        Label(question, systemImage: "questionmark.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+
+            Section {
+                Button {
+                    var accept: [String: Bool] = [:]
+                    for row in rows {
+                        accept[row.id] = accepted[row.id, default: true]
+                    }
+                    onSave(accept)
+                    dismiss()
+                } label: {
+                    Text("Salva bozza rivista")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(rows.isEmpty)
+            }
+        }
+        .navigationTitle("Bozza offline")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Chiudi") { dismiss() }
+            }
+        }
+    }
+
+    private func binding(for fieldPath: String) -> Binding<Bool> {
+        Binding(
+            get: { accepted[fieldPath, default: true] },
+            set: { accepted[fieldPath] = $0 }
+        )
     }
 }
 
