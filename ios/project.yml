@@ -1,0 +1,40 @@
+name: VenueScout
+options:
+  bundleIdPrefix: it.justwhy
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.2"
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+targets:
+  VenueScout:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: VenueScout
+        excludes:
+          - "**/*.md"
+    info:
+      path: VenueScout/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: VenueScout
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+        NSMicrophoneUsageDescription: "VenueScout usa il microfono per dettare note e trascrivere i sopralluoghi."
+        NSSpeechRecognitionUsageDescription: "VenueScout trascrive la tua voce in testo per compilare le schede location."
+        NSCameraUsageDescription: "VenueScout usa la fotocamera per fotografare le location durante i sopralluoghi."
+        NSPhotoLibraryAddUsageDescription: "VenueScout salva le foto dei sopralluoghi nella tua libreria."
+        NSLocationWhenInUseUsageDescription: "VenueScout usa la posizione per mostrare le location vicine sulla mappa."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.justwhy.venuescout
+        PRODUCT_NAME: VenueScout
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_STYLE: Automatic

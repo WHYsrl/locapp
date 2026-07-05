@@ -1,0 +1,169 @@
+import type {
+  AvailabilityStatus,
+  Configuration,
+  EffectiveStatus,
+  EventLocationStatus,
+  ProjectStatus,
+  QuoteStatus,
+} from "./types";
+
+export const CONFIGURATIONS: Configuration[] = [
+  "in_piedi",
+  "tavoli_tondi",
+  "tavolo_imperiale",
+  "platea",
+  "ferro_di_cavallo",
+  "classroom",
+  "cocktail",
+];
+
+export const CONFIG_LABELS: Record<Configuration, string> = {
+  in_piedi: "In piedi",
+  tavoli_tondi: "Tavoli tondi",
+  tavolo_imperiale: "Tavolo imperiale",
+  platea: "Platea",
+  ferro_di_cavallo: "Ferro di cavallo",
+  classroom: "Classroom",
+  cocktail: "Cocktail",
+};
+
+export const EFFECTIVE_STATUS_LABELS: Record<EffectiveStatus, string> = {
+  da_visitare: "Da visitare",
+  visitata: "Visitata",
+  proposta: "Proposta",
+  utilizzata: "Utilizzata",
+};
+
+export const EFFECTIVE_STATUS_CLASSES: Record<EffectiveStatus, string> = {
+  da_visitare: "bg-amber-100 text-amber-800 border-amber-200",
+  visitata: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  proposta: "bg-sky-100 text-sky-800 border-sky-200",
+  utilizzata: "bg-berry/10 text-berry border-berry/20",
+};
+
+export const EL_STATUSES: EventLocationStatus[] = [
+  "preselezionata",
+  "proposta",
+  "sopralluogo_fissato",
+  "in_valutazione",
+  "preferita",
+  "scartata",
+  "confermata",
+  "utilizzata",
+];
+
+export const EL_STATUS_LABELS: Record<EventLocationStatus, string> = {
+  preselezionata: "Preselezionata",
+  proposta: "Proposta",
+  sopralluogo_fissato: "Sopralluogo fissato",
+  in_valutazione: "In valutazione",
+  preferita: "Preferita",
+  scartata: "Scartata",
+  confermata: "Confermata",
+  utilizzata: "Utilizzata",
+};
+
+export const EL_STATUS_CLASSES: Record<EventLocationStatus, string> = {
+  preselezionata: "bg-gray-100 text-gray-700 border-gray-200",
+  proposta: "bg-sky-100 text-sky-800 border-sky-200",
+  sopralluogo_fissato: "bg-violet-100 text-violet-800 border-violet-200",
+  in_valutazione: "bg-amber-100 text-amber-800 border-amber-200",
+  preferita: "bg-gold/15 text-yellow-800 border-gold/30",
+  scartata: "bg-red-100 text-red-700 border-red-200",
+  confermata: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  utilizzata: "bg-berry/10 text-berry border-berry/20",
+};
+
+export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
+  richiesto: "Richiesto",
+  ricevuto: "Ricevuto",
+  accettato: "Accettato",
+  rifiutato: "Rifiutato",
+  scaduto: "Scaduto",
+};
+
+export const QUOTE_STATUS_CLASSES: Record<QuoteStatus, string> = {
+  richiesto: "bg-gray-100 text-gray-700 border-gray-200",
+  ricevuto: "bg-sky-100 text-sky-800 border-sky-200",
+  accettato: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  rifiutato: "bg-red-100 text-red-700 border-red-200",
+  scaduto: "bg-amber-100 text-amber-800 border-amber-200",
+};
+
+export const AVAILABILITY_LABELS: Record<AvailabilityStatus, string> = {
+  disponibile: "Disponibile",
+  opzionata: "Opzionata",
+  non_disponibile: "Non disponibile",
+};
+
+export const AVAILABILITY_CLASSES: Record<AvailabilityStatus, string> = {
+  disponibile: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  opzionata: "bg-amber-100 text-amber-800 border-amber-200",
+  non_disponibile: "bg-red-100 text-red-700 border-red-200",
+};
+
+export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  attivo: "Attivo",
+  chiuso: "Chiuso",
+  archiviato: "Archiviato",
+};
+
+export const PROJECT_STATUS_CLASSES: Record<ProjectStatus, string> = {
+  attivo: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  chiuso: "bg-gray-100 text-gray-700 border-gray-200",
+  archiviato: "bg-gray-100 text-gray-500 border-gray-200",
+};
+
+export const SMART_TAGS = [
+  "conferenze",
+  "gala_dinner",
+  "lunch",
+  "coffee",
+  "feste",
+  "lancio",
+  "shooting",
+  "wedding",
+];
+
+export const SUPPLIER_CATEGORIES = [
+  "catering",
+  "service_avl",
+  "allestimenti",
+  "arredi",
+  "fiori",
+  "vigilanza",
+];
+
+export function tagLabel(tag: string): string {
+  return tag.replaceAll("_", " ");
+}
+
+export function formatDate(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+export function formatDateTime(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function formatMoney(amount?: number | null, currency = "EUR"): string {
+  if (amount == null) return "—";
+  return new Intl.NumberFormat("it-IT", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+}
+
+export function yesNo(v?: boolean | null): string {
+  if (v == null) return "—";
+  return v ? "Sì" : "No";
+}

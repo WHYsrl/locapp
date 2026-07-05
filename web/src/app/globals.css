@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-berry: #6d2e46;
+  --color-berry-dark: #571f36;
+  --color-rose: #a26769;
+  --color-gold: #c9a227;
+  --color-tint: #f7f0f3;
+  --color-ink: #2b2433;
+}
+
+body {
+  background: var(--color-tint);
+  color: var(--color-ink);
+}
+
+/* MapLibre popup theming */
+.maplibregl-popup-content {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-family: inherit;
+  color: var(--color-ink);
+  box-shadow: 0 8px 24px rgb(43 36 51 / 0.18);
+}
