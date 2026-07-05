@@ -20,7 +20,7 @@ Source of truth for backend, web and iOS. All three components MUST follow this 
 2. **Base vs specific info.** Location tables hold BASE info (true regardless of project). Event/project-specific info (client feedback, negotiated prices, availability for those dates, notes) lives in `event_locations` and `location_project_notes` — never written into the base card.
 3. **Nested locations.** `locations.parent_location_id` — a hotel contains restaurants/meeting rooms. Children inherit address/logistics by default (API returns `effective_*` fields resolved from parent when null).
 4. **Location status.** `visit_status`: `da_visitare` | `visitata` (base info). `proposta`/`utilizzata` are DERIVED from `event_locations` (status `proposta`+ = proposed; `utilizzata` = used) — API exposes `GET /locations/:id/usage` listing projects/events + dates.
-5. **Ingestion sources.** AI extraction accepts: audio (transcript), free text, photos, PDF, PPTX, DOCX, **web URLs** (server fetches and parses). Every extraction produces a reviewable draft (`ingestion_jobs`), never writes directly.
+5. **Ingestion sources.** AI extraction accepts: audio (transcript), free text, photos, PDF, PPTX, DOCX, **web URLs** (server fetches and parses). Every extraction produces a reviewable draft (`ingestion_jobs`), never writes directly. When the draft has an address (or name + city) but no coordinates, the pipeline geocodes it (OSM Nominatim, best-effort) and proposes `location.geom {lat,lng}` + `location.google_maps_url` in the draft, sourced as `field_sources["locations.geom"]` — the user confirms via the per-field accept/reject review; coordinates are never written silently.
 6. **Maps.** Any project or event exposes `GET .../map` → GeoJSON FeatureCollection of its selected locations (+ optional POIs) for rendering/export.
 
 ## 3. Database schema (Drizzle / SQL, singular essentials)
@@ -43,7 +43,7 @@ locations(id uuid pk, parent_location_id uuid fk locations null,
   technical jsonb,          -- {max_kw,generators,aerial_ladder,cooking:('fiamma'|'induzione'|'rigenerazione'|'no'),heavy_vehicle_access,notes}
   accessibility_rating int 1..5, accessibility_notes text,
   availability_rules text,  -- e.g. "solo weekend ottobre-aprile"
-  smart_tags text[],        -- conferenze, gala_dinner, lunch, coffee, feste, lancio, shooting, wedding
+  smart_tags text[],        -- names from smart_tags registry (auto-registered on write)
   impressions text, embedding vector(1024),
   created_at, updated_at)
 
@@ -71,10 +71,13 @@ price_lists(id uuid pk, location_id fk, source_media_id fk null, name, valid_fro
 
 pois(id uuid pk, name, kind check in ('hotel','aeroporto','stazione','monumento','altro'), geom geometry(Point,4326))
 
+smart_tags(id uuid pk, name text unique not null, color text null, created_at)
+  -- shared tag registry; seeded with: conferenze, gala_dinner, lunch, coffee, feste, lancio, shooting, wedding
+
 projects(id uuid pk, name, client_name, status check in ('attivo','chiuso','archiviato') default 'attivo',
-  notes, created_at, updated_at)
+  tags text[], notes, created_at, updated_at)
 events(id uuid pk, project_id fk, name, event_type text, date_start date null, date_end date null,
-  pax int null, brief text, notes, sort int, created_at, updated_at)
+  pax int null, brief text, notes, tags text[], sort int, created_at, updated_at)
 
 event_locations(id uuid pk, event_id fk, location_id fk, unique(event_id, location_id),
   status check in ('preselezionata','proposta','sopralluogo_fissato','in_valutazione','preferita','scartata','confermata','utilizzata') default 'preselezionata',
@@ -134,8 +137,18 @@ Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[
   Implementation: Claude parses brief → structured criteria; SQL prefilter (capacity, tags, geo radius via PostGIS); Claude reranks top-N with explanations; optional pgvector semantic boost.
 - `GET /pois` / `POST /pois`
 
+### Geocoding
+- `GET /geocode?q=...` → `{data: [{display_name, lat, lon, type, importance, google_maps_url}]}` — OSM Nominatim, Italy-only, max 5 candidates; used to propose coordinates + Google Maps link (always user-confirmed)
+
+### Smart tags (shared registry)
+- `GET /tags` — full list, no pagination
+- `POST /tags {name,color?}` (editor+) — names normalized: trimmed, lowercased, spaces → underscores
+- `PATCH /tags/:id {name?,color?}` — rename propagates into `locations.smart_tags`, `projects.tags`, `events.tags`
+- `DELETE /tags/:id` (admin) — removes from registry only; stored arrays untouched
+- Auto-registration: tag names written via `PATCH /locations/:id`, `PATCH /projects/:id`, `PATCH /events/:id` that are missing from the registry are upserted (normalized)
+
 ### Projects & events
-- CRUD `/projects`, `/projects/:id/events`, `/events/:id`
+- CRUD `/projects`, `/projects/:id/events`, `/events/:id` — projects and events carry `tags[]` (smart-tag names)
 - `GET /projects/:id` includes `events[]` with `location_counts by status`
 - Shortlist: `POST /events/:id/locations {location_id}`, `PATCH /event-locations/:id` (status, feedback, notes), `DELETE /event-locations/:id`
 - `GET /events/:id/locations` → shortlist with location summaries, visits, quotes, availability

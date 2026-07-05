@@ -4,6 +4,7 @@ import { notFound } from '../lib/errors.js';
 import { paginated, parsePagination } from '../lib/pagination.js';
 import { rowToApi, rowsToApi } from '../lib/apiMappers.js';
 import { buildHistoryTimeline, deriveUsage, resolveEffective } from '../lib/serializers.js';
+import { registerTags } from '../lib/tagService.js';
 import type { CapacityConfiguration, VisitStatus } from '../db/schema.js';
 
 const IdParams = z.object({ id: z.string() });
@@ -46,6 +47,7 @@ const LocationBody = z.object({
   impressions: z.string().nullish(),
   lon: z.number().optional(),
   lat: z.number().optional(),
+  geom: z.object({ lat: z.number(), lng: z.number() }).nullish(),
 });
 
 type LocationBodyT = z.infer<typeof LocationBody>;
@@ -81,6 +83,10 @@ function bodyToInsert(body: Partial<LocationBodyT>): Record<string, unknown> {
   if (body.lon !== undefined && body.lat !== undefined) {
     out['geom'] = { lon: body.lon, lat: body.lat };
   }
+  // Alternative geom shape used by geocoding proposals: {lat, lng}.
+  if (body.geom) {
+    out['geom'] = { lon: body.geom.lng, lat: body.geom.lat };
+  }
   return out;
 }
 
@@ -109,7 +115,12 @@ export async function locationRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/locations', async (req, reply) => {
     const body = LocationBody.parse(req.body);
-    const row = await repos.locations.create(bodyToInsert(body) as never);
+    const insert = bodyToInsert(body);
+    // Unknown smart tags are auto-registered in the shared registry (normalized names persisted).
+    if (Array.isArray(insert['smartTags'])) {
+      insert['smartTags'] = await registerTags(repos.tags, insert['smartTags'] as string[]);
+    }
+    const row = await repos.locations.create(insert as never);
     reply.status(201);
     return rowToApi(row);
   });
@@ -162,7 +173,12 @@ export async function locationRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/locations/:id', async (req) => {
     const { id } = IdParams.parse(req.params);
     const body = LocationBody.partial().parse(req.body);
-    const row = await repos.locations.update(id, bodyToInsert(body) as never);
+    const patch = bodyToInsert(body);
+    // Unknown smart tags are auto-registered in the shared registry (normalized names persisted).
+    if (Array.isArray(patch['smartTags'])) {
+      patch['smartTags'] = await registerTags(repos.tags, patch['smartTags'] as string[]);
+    }
+    const row = await repos.locations.update(id, patch as never);
     if (!row) throw notFound('Location');
     return rowToApi(row);
   });

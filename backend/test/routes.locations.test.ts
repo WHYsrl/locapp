@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildTestApp, auth } from './helpers.js';
 
 const baseLocation = {
@@ -152,6 +152,35 @@ describe('location routes', () => {
     });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'Location not found' } });
+  });
+
+  it('PATCH /locations/:id accepts geom {lat, lng} and google_maps_url from geocoding', async () => {
+    const patches: Array<Record<string, unknown>> = [];
+    const ctx = await buildTestApp({
+      repos: {
+        locations: {
+          update: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+            patches.push(patch);
+            return { ...parentLocation, id };
+          }),
+        },
+      },
+    });
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/locations/loc-parent',
+      headers: auth(ctx.tokens.editor),
+      payload: {
+        geom: { lat: 41.9109, lng: 12.4534 },
+        google_maps_url: 'https://www.google.com/maps/search/?api=1&query=41.9109,12.4534',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    // The API {lat, lng} shape is normalized to the DB GeoPoint {lon, lat}.
+    expect(patches[0]).toEqual({
+      geom: { lon: 12.4534, lat: 41.9109 },
+      googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=41.9109,12.4534',
+    });
   });
 
   it('POST /locations/:id/media creates a media row with a presigned upload', async () => {

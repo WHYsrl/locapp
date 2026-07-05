@@ -62,6 +62,13 @@ struct ProjectDetailView: View {
                 Text(notes)
                     .font(.subheadline)
             }
+            if let tags = project.tags, !tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(tags, id: \.self) { TagChip(text: $0) }
+                    }
+                }
+            }
         }
     }
 

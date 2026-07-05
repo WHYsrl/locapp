@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
+import VoiceDictation from "@/components/VoiceDictation";
 import { Badge, Card, PageHeader, Spinner, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import type { ExtractedDraft, IngestSourceType } from "@/lib/types";
 
-type Mode = "url" | "testo" | "file";
+type Mode = "url" | "testo" | "file" | "voce";
 
 interface DraftRow {
   path: string;
@@ -81,6 +82,7 @@ export default function IngestPage() {
   const [mode, setMode] = useState<Mode>("url");
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
+  const [voiceText, setVoiceText] = useState("");
   const [fileName, setFileName] = useState("");
   const [fileText, setFileText] = useState<string | null>(null);
   const [fileType, setFileType] = useState<IngestSourceType>("pdf");
@@ -95,6 +97,8 @@ export default function IngestPage() {
     mutationFn: () => {
       if (mode === "url") return api.createIngestJob({ source_type: "url", url, location_id: targetLocation || null });
       if (mode === "testo") return api.createIngestJob({ source_type: "testo", text, location_id: targetLocation || null });
+      if (mode === "voce")
+        return api.createIngestJob({ source_type: "testo", text: voiceText, location_id: targetLocation || null });
       return api.createIngestJob({ source_type: fileType, text: fileText ?? undefined, location_id: targetLocation || null });
     },
     onSuccess: (job) => {
@@ -143,6 +147,7 @@ export default function IngestPage() {
   const canSubmit =
     (mode === "url" && url.trim().length > 5) ||
     (mode === "testo" && text.trim().length > 10) ||
+    (mode === "voce" && voiceText.trim().length > 10) ||
     (mode === "file" && fileName !== "");
 
   const reset = () => {
@@ -168,6 +173,7 @@ export default function IngestPage() {
                 ["url", "URL"],
                 ["testo", "Testo"],
                 ["file", "File"],
+                ["voce", "Voce"],
               ] as [Mode, string][]
             ).map(([m, label]) => (
               <button
@@ -228,6 +234,12 @@ export default function IngestPage() {
                   }}
                 />
                 {fileName && <p className="mt-2 text-xs text-ink/50">Selezionato: {fileName}</p>}
+              </div>
+            )}
+            {mode === "voce" && (
+              <div>
+                <label className={labelCls}>Dettatura vocale (it-IT) — registra, rivedi e invia come testo</label>
+                <VoiceDictation value={voiceText} onChange={setVoiceText} onFallbackToText={() => setMode("testo")} />
               </div>
             )}
 

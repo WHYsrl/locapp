@@ -4,6 +4,7 @@ import { badRequest, notFound } from '../lib/errors.js';
 import { rowToApi, rowsToApi } from '../lib/apiMappers.js';
 import { buildFeatureCollection } from '../lib/geojson.js';
 import { buildCompareMatrix } from '../lib/serializers.js';
+import { registerTags } from '../lib/tagService.js';
 
 const IdParams = z.object({ id: z.string() });
 
@@ -15,6 +16,7 @@ const EventBody = z.object({
   pax: z.number().int().positive().nullish(),
   brief: z.string().nullish(),
   notes: z.string().nullish(),
+  tags: z.array(z.string()).nullish(),
   sort: z.number().int().optional(),
 });
 
@@ -61,6 +63,8 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       pax: body.pax ?? null,
       brief: body.brief ?? null,
       notes: body.notes ?? null,
+      // Unknown tag names are auto-registered in the shared smart tags registry.
+      tags: body.tags ? await registerTags(repos.tags, body.tags) : null,
       sort: body.sort ?? 0,
     });
     reply.status(201);
@@ -83,6 +87,10 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
     if (body.pax !== undefined) patch['pax'] = body.pax;
     if (body.brief !== undefined) patch['brief'] = body.brief;
     if (body.notes !== undefined) patch['notes'] = body.notes;
+    if (body.tags !== undefined) {
+      // Unknown tag names are auto-registered in the shared smart tags registry.
+      patch['tags'] = body.tags === null ? null : await registerTags(repos.tags, body.tags);
+    }
     if (body.sort !== undefined) patch['sort'] = body.sort;
     const row = await repos.projects.updateEvent(id, patch as never);
     if (!row) throw notFound('Event');

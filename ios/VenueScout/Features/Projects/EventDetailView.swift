@@ -64,6 +64,13 @@ struct EventDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            if let tags = viewModel.event.tags, !tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(tags, id: \.self) { TagChip(text: $0) }
+                    }
+                }
+            }
             if let errorMessage = viewModel.errorMessage {
                 Label(errorMessage, systemImage: "wifi.exclamationmark")
                     .font(.caption)

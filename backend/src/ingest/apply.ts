@@ -25,10 +25,22 @@ const LOCATION_FIELD_MAP: Record<string, string> = {
   availability_rules: 'availabilityRules',
   smart_tags: 'smartTags',
   impressions: 'impressions',
+  geom: 'geom',
 };
 
 export interface AcceptMap {
   [fieldPath: string]: boolean;
+}
+
+/** Normalizes a draft geom ({lat, lng} or {lat, lon}) to the DB GeoPoint shape {lon, lat}. */
+export function normalizeGeom(value: unknown): { lon: number; lat: number } | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  const lat = typeof v['lat'] === 'number' ? v['lat'] : null;
+  const lon =
+    typeof v['lng'] === 'number' ? v['lng'] : typeof v['lon'] === 'number' ? v['lon'] : null;
+  if (lat == null || lon == null) return null;
+  return { lon, lat };
 }
 
 export function buildLocationPatch(draft: ExtractedLocationDraft, accept: AcceptMap): Record<string, unknown> {
@@ -36,7 +48,13 @@ export function buildLocationPatch(draft: ExtractedLocationDraft, accept: Accept
   for (const [key, value] of Object.entries(draft.location)) {
     const column = LOCATION_FIELD_MAP[key];
     if (!column) continue;
-    if (accept[`location.${key}`] === true) patch[column] = value;
+    if (accept[`location.${key}`] !== true) continue;
+    if (key === 'geom') {
+      const geom = normalizeGeom(value);
+      if (geom) patch[column] = geom;
+      continue;
+    }
+    patch[column] = value;
   }
   return patch;
 }

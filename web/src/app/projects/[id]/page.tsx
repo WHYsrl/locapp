@@ -6,7 +6,9 @@ import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import MapView, { type MapMarker } from "@/components/MapView";
-import { Badge, Card, EmptyState, Modal, PageHeader, Spinner, btnPrimary, inputCls, labelCls } from "@/components/ui";
+import CollapsibleSection from "@/components/CollapsibleSection";
+import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
+import { Badge, EmptyState, Modal, PageHeader, Spinner, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import {
   EL_STATUSES,
   EL_STATUS_CLASSES,
@@ -33,6 +35,9 @@ export default function ProjectDetailPage() {
   const [evDate, setEvDate] = useState("");
   const [evPax, setEvPax] = useState("");
   const [evBrief, setEvBrief] = useState("");
+  const [editingTags, setEditingTags] = useState(false);
+  const [draftTags, setDraftTags] = useState<string[]>([]);
+  const tagColors = useTagColors();
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -63,6 +68,16 @@ export default function ProjectDetailPage() {
       setEvDate("");
       setEvPax("");
       setEvBrief("");
+    },
+  });
+
+  const saveTags = useMutation({
+    mutationFn: (tags: string[]) => api.updateProject(id, { tags }),
+    onSuccess: () => {
+      setEditingTags(false);
+      qc.invalidateQueries({ queryKey: ["project", id] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["tags"] });
     },
   });
 
@@ -112,6 +127,42 @@ export default function ProjectDetailPage() {
         }
       />
 
+      {/* project tags */}
+      <div className="mb-6 -mt-2">
+        {editingTags ? (
+          <div className="max-w-2xl rounded-lg border border-berry/15 bg-white p-3">
+            <TagPicker value={draftTags} onChange={setDraftTags} compact />
+            <div className="mt-3 flex items-center gap-2">
+              <button className={btnPrimary} disabled={saveTags.isPending} onClick={() => saveTags.mutate(draftTags)}>
+                {saveTags.isPending ? "Salvataggio…" : "Salva tag"}
+              </button>
+              <button className={btnSecondary} onClick={() => setEditingTags(false)}>
+                Annulla
+              </button>
+              {saveTags.isError && <span className="text-sm text-red-600">Errore nel salvataggio.</span>}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {(project.tags ?? []).map((t) => (
+              <TagChip key={t} name={t} color={tagColors[t]} />
+            ))}
+            {(project.tags ?? []).length === 0 && <span className="text-xs text-ink/40">Nessun tag</span>}
+            <button
+              className="rounded-lg px-1.5 py-0.5 text-sm text-ink/40 transition hover:bg-berry/5 hover:text-berry"
+              title="Modifica i tag del progetto"
+              aria-label="Modifica i tag del progetto"
+              onClick={() => {
+                setDraftTags(project.tags ?? []);
+                setEditingTags(true);
+              }}
+            >
+              ✎
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           {project.events.length === 0 ? (
@@ -149,13 +200,13 @@ export default function ProjectDetailPage() {
         </div>
 
         <div>
-          <Card title="Mappa del progetto">
+          <CollapsibleSection storageKey="project:mappa" title="Mappa del progetto" defaultOpen>
             {markers.length === 0 ? (
               <p className="text-sm text-ink/40">Nessuna location georeferenziata in shortlist.</p>
             ) : (
               <MapView markers={markers} height={420} />
             )}
-          </Card>
+          </CollapsibleSection>
         </div>
       </div>
 

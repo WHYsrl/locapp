@@ -14,18 +14,23 @@ import { locationSubRoutes } from './routes/locationSub.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { searchRoutes } from './routes/search.js';
 import { poiRoutes } from './routes/pois.js';
+import { tagRoutes } from './routes/tags.js';
 import { projectRoutes } from './routes/projects.js';
 import { eventRoutes } from './routes/events.js';
 import { eventLocationRoutes } from './routes/eventLocations.js';
 import { feedbackRoutes } from './routes/feedback.js';
 import { companyRoutes } from './routes/companies.js';
 import { contactRoutes } from './routes/contacts.js';
+import { geocodeRoutes } from './routes/geocode.js';
+import type { GeocodeFn } from './lib/geocode.js';
 
 export interface AppDeps {
   repos: Repos;
   ai: AiService;
   storage: StorageService;
   jwtSecret: string;
+  /** Optional geocoder override (tests); defaults to OSM Nominatim. */
+  geocode?: GeocodeFn;
 }
 
 declare module 'fastify' {
@@ -98,12 +103,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register(ingestRoutes);
       await api.register(searchRoutes);
       await api.register(poiRoutes);
+      await api.register(tagRoutes);
       await api.register(projectRoutes);
       await api.register(eventRoutes);
       await api.register(eventLocationRoutes);
       await api.register(feedbackRoutes);
       await api.register(companyRoutes);
       await api.register(contactRoutes);
+      await api.register(geocodeRoutes);
     },
     { prefix: '/api/v1' },
   );

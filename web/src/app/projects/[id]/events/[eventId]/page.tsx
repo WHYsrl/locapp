@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import MapView, { type MapMarker } from "@/components/MapView";
+import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
 import { Badge, Card, EmptyState, Modal, PageHeader, ScoreBadge, Spinner, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import {
   AVAILABILITY_CLASSES,
@@ -38,6 +39,9 @@ export default function EventShortlistPage() {
   const [view, setView] = useState<View>("board");
   const [addOpen, setAddOpen] = useState(false);
   const [addLocationId, setAddLocationId] = useState("");
+  const [editingTags, setEditingTags] = useState(false);
+  const [draftTags, setDraftTags] = useState<string[]>([]);
+  const tagColors = useTagColors();
 
   const { data: event } = useQuery({ queryKey: ["event", eventId], queryFn: () => api.getEvent(eventId), enabled: !!eventId });
   const { data: shortlist, isLoading } = useQuery({
@@ -62,6 +66,15 @@ export default function EventShortlistPage() {
     qc.invalidateQueries({ queryKey: ["event-compare", eventId] });
     qc.invalidateQueries({ queryKey: ["project", projectId] });
   };
+
+  const saveTags = useMutation({
+    mutationFn: (tags: string[]) => api.updateEvent(eventId, { tags }),
+    onSuccess: () => {
+      setEditingTags(false);
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+      qc.invalidateQueries({ queryKey: ["tags"] });
+    },
+  });
 
   const addLoc = useMutation({
     mutationFn: () => api.addEventLocation(eventId, addLocationId),
@@ -134,6 +147,44 @@ export default function EventShortlistPage() {
           </>
         }
       />
+
+      {/* event tags */}
+      {event && (
+        <div className="mb-4 -mt-2">
+          {editingTags ? (
+            <div className="max-w-2xl rounded-lg border border-berry/15 bg-white p-3">
+              <TagPicker value={draftTags} onChange={setDraftTags} compact />
+              <div className="mt-3 flex items-center gap-2">
+                <button className={btnPrimary} disabled={saveTags.isPending} onClick={() => saveTags.mutate(draftTags)}>
+                  {saveTags.isPending ? "Salvataggio…" : "Salva tag"}
+                </button>
+                <button className={btnSecondary} onClick={() => setEditingTags(false)}>
+                  Annulla
+                </button>
+                {saveTags.isError && <span className="text-sm text-red-600">Errore nel salvataggio.</span>}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              {(event.tags ?? []).map((t) => (
+                <TagChip key={t} name={t} color={tagColors[t]} />
+              ))}
+              {(event.tags ?? []).length === 0 && <span className="text-xs text-ink/40">Nessun tag</span>}
+              <button
+                className="rounded-lg px-1.5 py-0.5 text-sm text-ink/40 transition hover:bg-berry/5 hover:text-berry"
+                title="Modifica i tag dell'evento"
+                aria-label="Modifica i tag dell'evento"
+                onClick={() => {
+                  setDraftTags(event.tags ?? []);
+                  setEditingTags(true);
+                }}
+              >
+                ✎
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {event?.brief && (
         <p className="mb-6 rounded-xl border-l-4 border-gold bg-gold/5 px-4 py-3 text-sm text-ink/75">

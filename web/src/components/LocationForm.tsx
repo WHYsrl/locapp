@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import type { Cooking, LocationBase, LocationDetail, VisitStatus } from "@/lib/types";
-import { SMART_TAGS, tagLabel } from "@/lib/labels";
+import GeocodeSuggest from "./GeocodeSuggest";
+import TagPicker from "./TagPicker";
 import { Card, Field, btnPrimary, btnSecondary, inputCls } from "./ui";
 
 interface FormState {
@@ -236,8 +237,37 @@ export default function LocationForm({
           <Field label="CAP">
             <input className={inputCls} value={f.postal_code} onChange={(e) => set("postal_code", e.target.value)} />
           </Field>
+          <div className="md:col-span-2">
+            <GeocodeSuggest
+              query={[f.name, f.address_line, f.city]
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .join(", ")}
+              disabled={!f.name.trim() || (!f.address_line.trim() && !f.city.trim())}
+              onPick={(c) =>
+                setF((prev) => ({
+                  ...prev,
+                  lat: String(c.lat),
+                  lng: String(c.lon),
+                  google_maps_url: c.google_maps_url,
+                }))
+              }
+            />
+          </div>
           <Field label="Link Google Maps" className="md:col-span-2">
-            <input className={inputCls} value={f.google_maps_url} onChange={(e) => set("google_maps_url", e.target.value)} />
+            <div className="flex items-center gap-3">
+              <input className={inputCls} value={f.google_maps_url} onChange={(e) => set("google_maps_url", e.target.value)} />
+              {f.google_maps_url.trim() !== "" && (
+                <a
+                  href={f.google_maps_url.trim()}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 text-xs font-medium text-berry hover:underline"
+                >
+                  Apri ↗
+                </a>
+              )}
+            </div>
           </Field>
           <Field label="Longitudine">
             <input className={inputCls} value={f.lng} onChange={(e) => set("lng", e.target.value)} placeholder="es. 9.1897" />
@@ -251,25 +281,7 @@ export default function LocationForm({
       <Card title="Tag e valutazione">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field label="Smart tag" className="md:col-span-2">
-            <div className="flex flex-wrap gap-2">
-              {SMART_TAGS.map((tag) => {
-                const active = f.smart_tags.includes(tag);
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() =>
-                      set("smart_tags", active ? f.smart_tags.filter((t) => t !== tag) : [...f.smart_tags, tag])
-                    }
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                      active ? "border-berry bg-berry text-white" : "border-rose/30 bg-white text-ink/60 hover:border-berry/40"
-                    }`}
-                  >
-                    {tagLabel(tag)}
-                  </button>
-                );
-              })}
-            </div>
+            <TagPicker value={f.smart_tags} onChange={(tags) => set("smart_tags", tags)} />
           </Field>
           <Field label="Accessibilità (1–5)">
             <select className={inputCls} value={f.accessibility_rating} onChange={(e) => set("accessibility_rating", e.target.value)}>

@@ -4,6 +4,7 @@ import SwiftUI
 /// Full base card of a location (SPEC §2.2): overview, spazi, logistica
 /// (con badge "ereditata"), tecnica, party, fornitori, referenti, utilizzo,
 /// cronologia and nested child locations.
+/// Every major section is collapsible; expansion state persists per section.
 struct LocationDetailView: View {
     let locationId: String
 
@@ -11,6 +12,7 @@ struct LocationDetailView: View {
     @State private var usage: [UsageEntry] = []
     @State private var history: [HistoryEntry] = []
     @State private var errorMessage: String?
+    @State private var showTagEditor = false
 
     init(locationId: String, preloaded: Location? = nil) {
         self.locationId = locationId
@@ -33,6 +35,18 @@ struct LocationDetailView: View {
         }
         .navigationTitle(location?.name ?? "Location")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showTagEditor) {
+            if let location {
+                NavigationStack {
+                    TagEditorView(
+                        locationId: location.id,
+                        initialTags: location.smartTags ?? []
+                    ) { newTags in
+                        self.location?.smartTags = newTags
+                    }
+                }
+            }
+        }
         .task {
             await load()
         }
@@ -106,13 +120,7 @@ struct LocationDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
-                if let tags = location.smartTags, !tags.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(tags, id: \.self) { TagChip(text: $0) }
-                        }
-                    }
-                }
+                tagsRow(location)
                 if let impressions = location.impressions {
                     Text("Impressioni: \(impressions)")
                         .font(.caption)
@@ -121,6 +129,32 @@ struct LocationDetailView: View {
                 }
             }
             .padding(.vertical, 2)
+        }
+    }
+
+    /// Smart-tag chips plus the pencil button opening the tag editor sheet.
+    private func tagsRow(_ location: Location) -> some View {
+        HStack(spacing: 8) {
+            if let tags = location.smartTags, !tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(tags, id: \.self) { TagChip(text: $0) }
+                    }
+                }
+            } else {
+                Text("Nessun tag")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            Button {
+                showTagEditor = true
+            } label: {
+                Image(systemName: "pencil.circle")
+                    .foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Modifica tag")
         }
     }
 
@@ -144,7 +178,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private func spacesSection(_ location: Location) -> some View {
         if let spaces = location.spaces, !spaces.isEmpty {
-            Section("Spazi e capienze") {
+            CollapsibleSection("Spazi e capienze", key: "spazi", defaultExpanded: true) {
                 ForEach(spaces) { space in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -185,7 +219,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private func logisticsSection(_ location: Location) -> some View {
         if let logistics = location.displayLogistics {
-            Section {
+            CollapsibleSection(key: "logistica", defaultExpanded: true) {
                 if let auto = logistics.auto {
                     InfoRow(label: "Accesso auto", value: auto)
                 }
@@ -218,6 +252,7 @@ struct LocationDetailView: View {
             } header: {
                 HStack {
                     Text("Logistica")
+                        .font(.headline)
                     if location.logisticsAreInherited {
                         StatusBadge(text: "Ereditata", color: .purple)
                     }
@@ -229,7 +264,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private func technicalSection(_ location: Location) -> some View {
         if let technical = location.technical {
-            Section("Tecnica") {
+            CollapsibleSection("Tecnica", key: "tecnica") {
                 if let maxKw = technical.maxKw {
                     InfoRow(label: "Potenza massima", value: "\(Int(maxKw)) kW")
                 }
@@ -257,7 +292,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private func partySection(_ location: Location) -> some View {
         if let party = location.party {
-            Section("Party") {
+            CollapsibleSection("Party", key: "party") {
                 if let indoor = party.indoor {
                     InfoRow(
                         label: "Interno",
@@ -293,7 +328,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private func suppliersSection(_ location: Location) -> some View {
         if let suppliers = location.suppliers, !suppliers.isEmpty {
-            Section("Fornitori") {
+            CollapsibleSection("Fornitori", key: "fornitori") {
                 ForEach(suppliers) { supplier in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -330,7 +365,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private func contactsSection(_ location: Location) -> some View {
         if let contacts = location.contacts, !contacts.isEmpty {
-            Section("Referenti") {
+            CollapsibleSection("Referenti", key: "referenti") {
                 ForEach(contacts) { contact in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -361,7 +396,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private func childrenSection(_ location: Location) -> some View {
         if let children = location.children, !children.isEmpty {
-            Section("Location collegate") {
+            CollapsibleSection("Location collegate", key: "location_collegate") {
                 ForEach(children) { child in
                     NavigationLink {
                         LocationDetailView(locationId: child.id, preloaded: child)
@@ -376,7 +411,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private var usageSection: some View {
         if !usage.isEmpty {
-            Section("Utilizzo (progetti ed eventi)") {
+            CollapsibleSection("Utilizzo (progetti ed eventi)", key: "utilizzo") {
                 ForEach(usage) { entry in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -407,7 +442,7 @@ struct LocationDetailView: View {
     @ViewBuilder
     private var historySection: some View {
         if !history.isEmpty {
-            Section("Cronologia") {
+            CollapsibleSection("Cronologia", key: "cronologia") {
                 ForEach(history) { entry in
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
@@ -428,6 +463,232 @@ struct LocationDetailView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Collapsible section
+
+/// List section whose content sits in a DisclosureGroup with a styled header.
+/// Expansion state persists per section key (shared across locations).
+private struct CollapsibleSection<Header: View, Content: View>: View {
+    @AppStorage private var isExpanded: Bool
+    private let header: Header
+    private let content: Content
+
+    init(
+        key: String,
+        defaultExpanded: Bool = false,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder header: () -> Header
+    ) {
+        self.header = header()
+        self.content = content()
+        _isExpanded = AppStorage(wrappedValue: defaultExpanded, "locationSectionExpanded.\(key)")
+    }
+
+    var body: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isExpanded) {
+                content
+            } label: {
+                header
+            }
+        }
+    }
+}
+
+extension CollapsibleSection where Header == Text {
+    /// Convenience for plain-title headers.
+    init(
+        _ title: String,
+        key: String,
+        defaultExpanded: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.init(key: key, defaultExpanded: defaultExpanded, content: content) {
+            Text(title)
+                .font(.headline)
+        }
+    }
+}
+
+// MARK: - Tag editor
+
+/// Sheet to toggle registry smart tags on a location and add new ones.
+/// Salva sends a PATCH with the full tag list; unknown names are
+/// auto-registered by the backend.
+private struct TagEditorView: View {
+    let locationId: String
+    let initialTags: [String]
+    let onSave: ([String]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var registryTags: [Tag] = []
+    @State private var selected: Set<String>
+    @State private var newTagName = ""
+    @State private var isLoading = true
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(locationId: String, initialTags: [String], onSave: @escaping ([String]) -> Void) {
+        self.locationId = locationId
+        self.initialTags = initialTags
+        self.onSave = onSave
+        _selected = State(initialValue: Set(initialTags))
+    }
+
+    /// Registry names plus any selected names missing from the registry,
+    /// so tags already on the location can always be toggled off. Deduplicated.
+    private var allNames: [String] {
+        var names: [String] = []
+        var seen = Set<String>()
+        for tag in registryTags where seen.insert(tag.name).inserted {
+            names.append(tag.name)
+        }
+        for name in selected.sorted() where seen.insert(name).inserted {
+            names.append(name)
+        }
+        return names
+    }
+
+    private var trimmedNewName: String {
+        newTagName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        List {
+            if let errorMessage {
+                Section {
+                    Label(errorMessage, systemImage: "wifi.exclamationmark")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            Section("Tag disponibili") {
+                if isLoading && registryTags.isEmpty {
+                    ProgressView()
+                }
+                ForEach(allNames, id: \.self) { name in
+                    Button {
+                        toggle(name)
+                    } label: {
+                        HStack(spacing: 8) {
+                            if let color = tagColor(for: name) {
+                                Circle()
+                                    .fill(color)
+                                    .frame(width: 10, height: 10)
+                            }
+                            Text(name)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if selected.contains(name) {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                }
+                if !isLoading && allNames.isEmpty {
+                    Text("Nessun tag nel registro.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section("Nuovo tag") {
+                HStack {
+                    TextField("Nuovo tag", text: $newTagName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit { addNewTag() }
+                    Button {
+                        addNewTag()
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(trimmedNewName.isEmpty)
+                    .accessibilityLabel("Aggiungi tag")
+                }
+            }
+        }
+        .navigationTitle("Modifica tag")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Annulla") { dismiss() }
+                    .disabled(isSaving)
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                if isSaving {
+                    ProgressView()
+                } else {
+                    Button("Salva") {
+                        Task { await save() }
+                    }
+                }
+            }
+        }
+        .task { await loadTags() }
+    }
+
+    private func toggle(_ name: String) {
+        if selected.contains(name) {
+            selected.remove(name)
+        } else {
+            selected.insert(name)
+        }
+    }
+
+    private func addNewTag() {
+        let name = trimmedNewName
+        guard !name.isEmpty else { return }
+        selected.insert(name)
+        if !registryTags.contains(where: { $0.name == name }) {
+            registryTags.append(Tag(id: "local-\(name)", name: name, color: nil))
+        }
+        newTagName = ""
+        // Best-effort registry insert; the PATCH also auto-registers unknown names.
+        Task { _ = try? await APIClient.shared.createTag(name: name) }
+    }
+
+    /// Hex color (`#RRGGBB`) of a registry tag, if present and parseable.
+    private func tagColor(for name: String) -> Color? {
+        guard var hex = registryTags.first(where: { $0.name == name })?.color else { return nil }
+        hex = hex.trimmingCharacters(in: .whitespaces)
+        if hex.hasPrefix("#") { hex.removeFirst() }
+        guard hex.count == 6, let value = UInt64(hex, radix: 16) else { return nil }
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        return Color(red: red, green: green, blue: blue)
+    }
+
+    private func loadTags() async {
+        do {
+            registryTags = try await APIClient.shared.fetchTags()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+        // Keep the original ordering for tags already on the location,
+        // then append newly selected ones in list order.
+        var result = initialTags.filter { selected.contains($0) }
+        for name in allNames where selected.contains(name) && !result.contains(name) {
+            result.append(name)
+        }
+        do {
+            try await APIClient.shared.updateLocationTags(id: locationId, tags: result)
+            onSave(result)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

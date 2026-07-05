@@ -4,6 +4,7 @@ import { notFound } from '../lib/errors.js';
 import { paginated, parsePagination } from '../lib/pagination.js';
 import { rowToApi, rowsToApi } from '../lib/apiMappers.js';
 import { buildFeatureCollection } from '../lib/geojson.js';
+import { registerTags } from '../lib/tagService.js';
 
 const IdParams = z.object({ id: z.string() });
 
@@ -11,6 +12,7 @@ const ProjectBody = z.object({
   name: z.string().min(1),
   client_name: z.string().nullish(),
   status: z.enum(['attivo', 'chiuso', 'archiviato']).optional(),
+  tags: z.array(z.string()).nullish(),
   notes: z.string().nullish(),
 });
 
@@ -30,6 +32,8 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       name: body.name,
       clientName: body.client_name ?? null,
       status: body.status ?? 'attivo',
+      // Unknown tag names are auto-registered in the shared smart tags registry.
+      tags: body.tags ? await registerTags(repos.tags, body.tags) : null,
       notes: body.notes ?? null,
     });
     reply.status(201);
@@ -66,6 +70,10 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     if (body.name !== undefined) patch['name'] = body.name;
     if (body.client_name !== undefined) patch['clientName'] = body.client_name;
     if (body.status !== undefined) patch['status'] = body.status;
+    if (body.tags !== undefined) {
+      // Unknown tag names are auto-registered in the shared smart tags registry.
+      patch['tags'] = body.tags === null ? null : await registerTags(repos.tags, body.tags);
+    }
     if (body.notes !== undefined) patch['notes'] = body.notes;
     const row = await repos.projects.update(id, patch as never);
     if (!row) throw notFound('Project');

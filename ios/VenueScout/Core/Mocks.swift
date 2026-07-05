@@ -201,6 +201,16 @@ enum Mocks {
 
     static let locations: [Location] = [location, ristoranteFiglio]
 
+    // MARK: Smart-tag registry
+
+    static let tags: [Tag] = [
+        Tag(id: "tag-1", name: "gala_dinner", color: "#8E44AD"),
+        Tag(id: "tag-2", name: "conferenze", color: "#2980B9"),
+        Tag(id: "tag-3", name: "feste", color: "#E67E22"),
+        Tag(id: "tag-4", name: "lunch", color: nil),
+        Tag(id: "tag-5", name: "wedding", color: "#27AE60")
+    ]
+
     static let usage: [UsageEntry] = [
         UsageEntry(
             project: EntityRef(id: "pr-1", name: "Convention ACME 2026"),
@@ -235,7 +245,8 @@ enum Mocks {
         brief: "Cena di gala per 180 ospiti, tavoli tondi, vista su Firenze, budget medio-alto.",
         notes: nil,
         sort: 1,
-        locationCounts: ["proposta": 2, "in_valutazione": 1, "confermata": 1]
+        locationCounts: ["proposta": 2, "in_valutazione": 1, "confermata": 1],
+        tags: ["vip", "serale"]
     )
 
     static let event2 = Event(
@@ -258,7 +269,8 @@ enum Mocks {
         clientName: "ACME S.p.A.",
         status: .attivo,
         notes: "Tre giorni a Firenze, 250 partecipanti.",
-        events: [event, event2]
+        events: [event, event2],
+        tags: ["convention", "firenze"]
     )
 
     static let projects: [Project] = [

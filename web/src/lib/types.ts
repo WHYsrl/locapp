@@ -76,6 +76,14 @@ export interface SpaceFeatures {
   arredi?: string[];
 }
 
+// ---- smart tags -------------------------------------------------------------
+
+export interface SmartTag {
+  id: string;
+  name: string;
+  color?: string | null;
+}
+
 // ---- registry -------------------------------------------------------------
 
 export interface Company {
@@ -243,6 +251,7 @@ export interface Project {
   client_name?: string | null;
   status: ProjectStatus;
   notes?: string | null;
+  tags?: string[];
   created_at?: string;
   events_count?: number;
 }
@@ -257,6 +266,7 @@ export interface EventItem {
   pax?: number | null;
   brief?: string | null;
   notes?: string | null;
+  tags?: string[];
   sort?: number;
 }
 
@@ -337,6 +347,18 @@ export interface SearchResult {
   score: number;
   reasons: MatchReasons;
   distances: { poi: string; km: number; minutes_car: number }[];
+}
+
+// ---- geocoding --------------------------------------------------------------
+
+/** Candidate returned by GET /api/v1/geocode?q=… */
+export interface GeocodeCandidate {
+  display_name: string;
+  lat: number;
+  lon: number;
+  google_maps_url: string;
+  type?: string;
+  importance?: number;
 }
 
 // ---- ingestion (SPEC §5) --------------------------------------------------

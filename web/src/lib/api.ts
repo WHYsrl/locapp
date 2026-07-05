@@ -1,10 +1,9 @@
 // Typed API client for the VenueScout backend (SPEC §4, /api/v1).
-// Every call goes to the real API; on network failure (backend unreachable)
-// it transparently falls back to the in-memory demo store and stays in demo
-// mode for the rest of the session. NEXT_PUBLIC_DEMO=1 forces demo mode.
+// Every call goes to the real API. Network failures throw NetworkError and
+// must be surfaced by the UI (no silent fallback). 401 responses clear the
+// token and redirect to /login.
 
-import * as demo from "./demo";
-import { activateDemo, getToken, isDemoActive } from "./auth";
+import { clearToken, flagSessionExpired, getToken } from "./auth";
 import type {
   AvailabilitySlot,
   Company,
@@ -15,10 +14,12 @@ import type {
   EventItem,
   EventLocationEntry,
   EventLocationStatus,
+  GeocodeCandidate,
   HistoryEntry,
   IngestSourceType,
   IngestionJob,
   LocationBase,
+  LocationContactEntry,
   LocationDetail,
   LocationFilters,
   LocationListItem,
@@ -30,6 +31,8 @@ import type {
   Quote,
   SearchResult,
   SiteVisit,
+  SmartTag,
+  SupplierEntry,
   UsageEntry,
   User,
 } from "./types";
@@ -43,6 +46,15 @@ export class ApiError extends Error {
     message: string
   ) {
     super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Thrown when the backend is unreachable (fetch-level failure). */
+export class NetworkError extends Error {
+  constructor(message = "Impossibile raggiungere il server") {
+    super(message);
+    this.name = "NetworkError";
   }
 }
 
@@ -54,7 +66,13 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}/api/v1${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/v1${path}`, { ...init, headers });
+  } catch {
+    throw new NetworkError();
+  }
+
   if (!res.ok) {
     let code = "http_error";
     let message = `Errore ${res.status}`;
@@ -65,25 +83,18 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // non-JSON error body
     }
+    if (res.status === 401 && !path.startsWith("/auth/")) {
+      // Session expired or token invalid: clear and send back to login.
+      clearToken();
+      flagSessionExpired();
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.location.assign("/login");
+      }
+    }
     throw new ApiError(res.status, code, message);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
-}
-
-/**
- * Run a real API call with demo fallback. ApiError (a reachable backend that
- * answered 4xx/5xx) is rethrown; network-level failures activate demo mode.
- */
-async function call<T>(demoFn: () => Promise<T>, path: string, init?: RequestInit): Promise<T> {
-  if (isDemoActive()) return demoFn();
-  try {
-    return await http<T>(path, init);
-  } catch (err) {
-    if (err instanceof ApiError) throw err;
-    activateDemo();
-    return demoFn();
-  }
 }
 
 function unwrap<T>(p: Promise<Paginated<T> | T[]>): Promise<T[]> {
@@ -102,7 +113,7 @@ const qs = (params: Record<string, string | number | boolean | undefined | null>
 // ---- auth ----
 
 export function login(email: string, password: string): Promise<{ token: string; user: User }> {
-  return call(() => demo.login(email), "/auth/login", {
+  return http("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
@@ -121,33 +132,99 @@ export function listLocations(filters: LocationFilters = {}): Promise<LocationLi
     root_only: filters.root_only ? "true" : undefined,
     per_page: 100,
   });
-  return unwrap(call(() => demo.listLocations(filters), `/locations${query}`));
+  return unwrap(http(`/locations${query}`));
 }
 
 export function getLocation(id: string): Promise<LocationDetail> {
-  return call(() => demo.getLocation(id), `/locations/${id}`);
+  return http(`/locations/${id}`);
 }
 
 export function getLocationUsage(id: string): Promise<UsageEntry[]> {
-  return unwrap(call(() => demo.getLocationUsage(id), `/locations/${id}/usage`));
+  return unwrap(http(`/locations/${id}/usage`));
 }
 
 export function getLocationHistory(id: string): Promise<HistoryEntry[]> {
-  return unwrap(call(() => demo.getLocationHistory(id), `/locations/${id}/history`));
+  return unwrap(http(`/locations/${id}/history`));
 }
 
 export function createLocation(payload: Partial<LocationBase>): Promise<LocationBase> {
-  return call(() => demo.createLocation(payload), "/locations", {
+  return http("/locations", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function updateLocation(id: string, payload: Partial<LocationBase>): Promise<LocationBase> {
-  return call(() => demo.updateLocation(id, payload), `/locations/${id}`, {
+  return http(`/locations/${id}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+// ---- geocoding ----
+
+export function geocode(q: string): Promise<GeocodeCandidate[]> {
+  return unwrap(http(`/geocode${qs({ q })}`));
+}
+
+// ---- location suppliers & contacts ----
+
+export function addLocationSupplier(
+  locationId: string,
+  payload: {
+    company_id: string;
+    contact_id?: string | null;
+    category: string;
+    requirement: "obbligatorio" | "consigliato";
+    conditions?: string | null;
+  }
+): Promise<SupplierEntry> {
+  return http(`/locations/${locationId}/suppliers`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function removeLocationSupplier(locationId: string, supplierId: string): Promise<void> {
+  return http(`/locations/${locationId}/suppliers/${supplierId}`, { method: "DELETE" });
+}
+
+export function addLocationContact(
+  locationId: string,
+  payload: { contact_id: string; role: string; company_id?: string | null }
+): Promise<LocationContactEntry> {
+  return http(`/locations/${locationId}/contacts`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function removeLocationContact(locationId: string, contactId: string): Promise<void> {
+  return http(`/locations/${locationId}/contacts/${contactId}`, { method: "DELETE" });
+}
+
+// ---- smart tags ----
+
+export function listTags(): Promise<SmartTag[]> {
+  return unwrap(http("/tags"));
+}
+
+export function createTag(payload: { name: string; color?: string | null }): Promise<SmartTag> {
+  return http("/tags", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateTag(id: string, payload: { name?: string; color?: string | null }): Promise<SmartTag> {
+  return http(`/tags/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteTag(id: string): Promise<void> {
+  return http(`/tags/${id}`, { method: "DELETE" });
 }
 
 // ---- ingestion ----
@@ -158,18 +235,18 @@ export function createIngestJob(payload: {
   url?: string;
   text?: string;
 }): Promise<IngestionJob> {
-  return call(() => demo.createIngestJob(payload), "/ingest", {
+  return http("/ingest", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function getIngestJob(id: string): Promise<IngestionJob> {
-  return call(() => demo.getIngestJob(id), `/ingest/${id}`);
+  return http(`/ingest/${id}`);
 }
 
 export function applyIngestJob(id: string, accept: Record<string, boolean>): Promise<{ location_id: string }> {
-  return call(() => demo.applyIngestJob(id, accept), `/ingest/${id}/apply`, {
+  return http(`/ingest/${id}/apply`, {
     method: "POST",
     body: JSON.stringify({ accept }),
   });
@@ -188,7 +265,7 @@ export function searchBrief(params: {
     body.near = [{ poi_id: params.near_poi_id, max_minutes: params.max_minutes }];
   }
   return unwrap(
-    call(() => demo.searchBrief(params), "/search/brief", {
+    http("/search/brief", {
       method: "POST",
       body: JSON.stringify(body),
     })
@@ -196,43 +273,57 @@ export function searchBrief(params: {
 }
 
 export function listPois(): Promise<Poi[]> {
-  return unwrap(call(() => demo.listPois(), "/pois"));
+  return unwrap(http("/pois"));
 }
 
 // ---- projects & events ----
 
 export function listProjects(): Promise<Project[]> {
-  return unwrap(call(() => demo.listProjects(), "/projects"));
+  return unwrap(http("/projects"));
 }
 
-export function createProject(payload: { name: string; client_name?: string; notes?: string }): Promise<Project> {
-  return call(() => demo.createProject(payload), "/projects", {
+export function createProject(payload: { name: string; client_name?: string; notes?: string; tags?: string[] }): Promise<Project> {
+  return http("/projects", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function getProject(id: string): Promise<ProjectDetail> {
-  return call(() => demo.getProject(id), `/projects/${id}`);
+  return http(`/projects/${id}`);
+}
+
+export function updateProject(id: string, payload: Partial<Project>): Promise<Project> {
+  return http(`/projects/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function createEvent(projectId: string, payload: Partial<EventItem>): Promise<EventItem> {
-  return call(() => demo.createEvent(projectId, payload), `/projects/${projectId}/events`, {
+  return http(`/projects/${projectId}/events`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function getEvent(id: string): Promise<EventItem & { project: Project }> {
-  return call(() => demo.getEvent(id), `/events/${id}`);
+  return http(`/events/${id}`);
+}
+
+export function updateEvent(id: string, payload: Partial<EventItem>): Promise<EventItem> {
+  return http(`/events/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getEventLocations(eventId: string): Promise<EventLocationEntry[]> {
-  return unwrap(call(() => demo.getEventLocations(eventId), `/events/${eventId}/locations`));
+  return unwrap(http(`/events/${eventId}/locations`));
 }
 
 export function addEventLocation(eventId: string, locationId: string): Promise<EventLocationEntry> {
-  return call(() => demo.addEventLocation(eventId, locationId), `/events/${eventId}/locations`, {
+  return http(`/events/${eventId}/locations`, {
     method: "POST",
     body: JSON.stringify({ location_id: locationId }),
   });
@@ -242,25 +333,25 @@ export function patchEventLocation(
   id: string,
   patch: { status?: EventLocationStatus; client_feedback?: string; notes?: string }
 ): Promise<EventLocationEntry> {
-  return call(() => demo.patchEventLocation(id, patch), `/event-locations/${id}`, {
+  return http(`/event-locations/${id}`, {
     method: "PATCH",
     body: JSON.stringify(patch),
   });
 }
 
 export function deleteEventLocation(id: string): Promise<void> {
-  return call(() => demo.deleteEventLocation(id), `/event-locations/${id}`, { method: "DELETE" });
+  return http(`/event-locations/${id}`, { method: "DELETE" });
 }
 
 export function addVisit(eventLocationId: string, payload: Omit<SiteVisit, "id">): Promise<SiteVisit> {
-  return call(() => demo.addVisit(eventLocationId, payload), `/event-locations/${eventLocationId}/visits`, {
+  return http(`/event-locations/${eventLocationId}/visits`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function addQuote(eventLocationId: string, payload: Omit<Quote, "id">): Promise<Quote> {
-  return call(() => demo.addQuote(eventLocationId, payload), `/event-locations/${eventLocationId}/quotes`, {
+  return http(`/event-locations/${eventLocationId}/quotes`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -270,67 +361,67 @@ export function addAvailability(
   eventLocationId: string,
   payload: Omit<AvailabilitySlot, "id">
 ): Promise<AvailabilitySlot> {
-  return call(() => demo.addAvailability(eventLocationId, payload), `/event-locations/${eventLocationId}/availability`, {
+  return http(`/event-locations/${eventLocationId}/availability`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function getEventCompare(eventId: string): Promise<CompareMatrix> {
-  return call(() => demo.getEventCompare(eventId), `/events/${eventId}/compare`);
+  return http(`/events/${eventId}/compare`);
 }
 
 export function getEventMap(eventId: string): Promise<MapFeatureCollection> {
-  return call(() => demo.getEventMap(eventId), `/events/${eventId}/map`);
+  return http(`/events/${eventId}/map`);
 }
 
 export function getProjectMap(projectId: string): Promise<MapFeatureCollection> {
-  return call(() => demo.getProjectMap(projectId), `/projects/${projectId}/map`);
+  return http(`/projects/${projectId}/map`);
 }
 
 // ---- registry ----
 
 export function listCompanies(filters: { q?: string; kind?: string; category?: string } = {}): Promise<Company[]> {
-  return unwrap(call(() => demo.listCompanies(filters), `/companies${qs(filters)}`));
+  return unwrap(http(`/companies${qs(filters)}`));
 }
 
 export function getCompany(id: string): Promise<CompanyDetail> {
-  return call(() => demo.getCompany(id), `/companies/${id}`);
+  return http(`/companies/${id}`);
 }
 
 export function createCompany(payload: Partial<Company> & { name: string }): Promise<Company> {
-  return call(() => demo.createCompany(payload), "/companies", {
+  return http("/companies", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function updateCompany(id: string, payload: Partial<Company>): Promise<Company> {
-  return call(() => demo.updateCompany(id, payload), `/companies/${id}`, {
+  return http(`/companies/${id}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
 
 export function listContacts(filters: { q?: string } = {}): Promise<Contact[]> {
-  return unwrap(call(() => demo.listContacts(filters), `/contacts${qs(filters)}`));
+  return unwrap(http(`/contacts${qs(filters)}`));
 }
 
 export function getContact(id: string): Promise<ContactDetail> {
-  return call(() => demo.getContact(id), `/contacts/${id}`);
+  return http(`/contacts/${id}`);
 }
 
 export function createContact(
   payload: Partial<Contact> & { first_name: string; last_name: string }
 ): Promise<Contact> {
-  return call(() => demo.createContact(payload), "/contacts", {
+  return http("/contacts", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function updateContact(id: string, payload: Partial<Contact>): Promise<Contact> {
-  return call(() => demo.updateContact(id, payload), `/contacts/${id}`, {
+  return http(`/contacts/${id}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });

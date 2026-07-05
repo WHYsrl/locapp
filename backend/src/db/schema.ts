@@ -263,12 +263,21 @@ export const pois = pgTable(
   (t) => [index('pois_geom_gist').using('gist', t.geom)],
 );
 
+// ---- smart tags registry (shared, referenced by name from tag arrays) ----
+export const smartTags = pgTable('smart_tags', {
+  id: pk(),
+  name: text('name').notNull().unique(),
+  color: text('color'),
+  createdAt: createdAt(),
+});
+
 // ---- projects & events ----
 export const projects = pgTable('projects', {
   id: pk(),
   name: text('name').notNull(),
   clientName: text('client_name'),
   status: text('status').$type<ProjectStatus>().notNull().default('attivo'),
+  tags: text('tags').array(),
   notes: text('notes'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -289,6 +298,7 @@ export const events = pgTable(
     pax: integer('pax'),
     brief: text('brief'),
     notes: text('notes'),
+    tags: text('tags').array(),
     sort: integer('sort').notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -445,6 +455,7 @@ export type LocationSupplierRow = typeof locationSuppliers.$inferSelect;
 export type MediaRow = typeof media.$inferSelect;
 export type PriceListRow = typeof priceLists.$inferSelect;
 export type PoiRow = typeof pois.$inferSelect;
+export type SmartTagRow = typeof smartTags.$inferSelect;
 export type ProjectRow = typeof projects.$inferSelect;
 export type EventRow = typeof events.$inferSelect;
 export type EventLocationRow = typeof eventLocations.$inferSelect;

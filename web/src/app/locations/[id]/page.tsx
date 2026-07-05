@@ -1,11 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
+import GeocodeSuggest from "@/components/GeocodeSuggest";
 import MapView from "@/components/MapView";
-import { Badge, Card, EmptyState, Spinner, Stars, Tag } from "@/components/ui";
+import CollapsibleSection from "@/components/CollapsibleSection";
+import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
+import AddSupplierDialog from "@/components/AddSupplierDialog";
+import AddContactDialog from "@/components/AddContactDialog";
+import { Badge, Card, EmptyState, Spinner, Stars, btnPrimary, btnSecondary } from "@/components/ui";
 import {
   CONFIGURATIONS,
   CONFIG_LABELS,
@@ -19,11 +25,19 @@ import {
   tagLabel,
   yesNo,
 } from "@/lib/labels";
-import { lngLatOf } from "@/lib/types";
+import { lngLatOf, type GeocodeCandidate } from "@/lib/types";
 
 export default function LocationDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const qc = useQueryClient();
+
+  const [editingTags, setEditingTags] = useState(false);
+  const [draftTags, setDraftTags] = useState<string[]>([]);
+  const [supplierOpen, setSupplierOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+
+  const tagColors = useTagColors();
 
   const { data: loc, isLoading } = useQuery({
     queryKey: ["location", id],
@@ -39,6 +53,35 @@ export default function LocationDetailPage() {
     queryKey: ["location-history", id],
     queryFn: () => api.getLocationHistory(id),
     enabled: !!id,
+  });
+
+  const saveTags = useMutation({
+    mutationFn: (tags: string[]) => api.updateLocation(id, { smart_tags: tags }),
+    onSuccess: () => {
+      setEditingTags(false);
+      qc.invalidateQueries({ queryKey: ["location", id] });
+      qc.invalidateQueries({ queryKey: ["locations"] });
+      qc.invalidateQueries({ queryKey: ["tags"] });
+    },
+  });
+
+  const removeSupplier = useMutation({
+    mutationFn: (supplierId: string) => api.removeLocationSupplier(id, supplierId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["location", id] }),
+  });
+
+  const removeContact = useMutation({
+    mutationFn: (contactId: string) => api.removeLocationContact(id, contactId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["location", id] }),
+  });
+
+  const applyCoords = useMutation({
+    mutationFn: (c: GeocodeCandidate) =>
+      api.updateLocation(id, { lat: Number(c.lat), lng: Number(c.lon), google_maps_url: c.google_maps_url }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["location", id] });
+      qc.invalidateQueries({ queryKey: ["locations"] });
+    },
   });
 
   if (isLoading || !loc) return <Spinner />;
@@ -69,7 +112,7 @@ export default function LocationDetailPage() {
       {/* header */}
       <div className="mb-6 rounded-xl border border-berry/10 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-bold text-ink">{loc.name}</h1>
               <Badge className={EFFECTIVE_STATUS_CLASSES[st]}>{EFFECTIVE_STATUS_LABELS[st]}</Badge>
@@ -80,14 +123,60 @@ export default function LocationDetailPage() {
                 .join(", ") || "Indirizzo non impostato"}
               {loc.parent && <span className="ml-2 text-xs text-ink/40">· interna a {loc.parent.name}</span>}
             </p>
+            {!ll && (loc.address_line || loc.city) && (
+              <div className="mt-2">
+                <GeocodeSuggest
+                  query={[loc.name, loc.address_line, loc.city].filter(Boolean).join(", ")}
+                  buttonLabel="Coordinate mancanti — proponi da indirizzo"
+                  buttonClassName="text-xs font-medium text-berry underline decoration-dotted underline-offset-2 transition hover:text-berry-dark disabled:opacity-50"
+                  onPick={(c) => applyCoords.mutate(c)}
+                />
+                {applyCoords.isPending && <p className="mt-1 text-xs text-ink/40">Salvataggio coordinate…</p>}
+                {applyCoords.isError && (
+                  <p className="mt-1 text-xs text-red-600">Errore nel salvataggio delle coordinate. Riprova.</p>
+                )}
+              </div>
+            )}
             {loc.summary && <p className="mt-3 max-w-3xl text-sm leading-relaxed text-ink/75">{loc.summary}</p>}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {(loc.smart_tags ?? []).map((t) => (
-                <Tag key={t}>{tagLabel(t)}</Tag>
-              ))}
-              <span className="ml-2 text-sm text-ink/50">Accessibilità:</span>
-              <Stars value={loc.accessibility_rating} />
-            </div>
+
+            {/* smart tags + inline edit */}
+            {editingTags ? (
+              <div className="mt-3 max-w-2xl rounded-lg border border-berry/15 bg-tint/40 p-3">
+                <TagPicker value={draftTags} onChange={setDraftTags} compact />
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    className={btnPrimary}
+                    disabled={saveTags.isPending}
+                    onClick={() => saveTags.mutate(draftTags)}
+                  >
+                    {saveTags.isPending ? "Salvataggio…" : "Salva tag"}
+                  </button>
+                  <button className={btnSecondary} onClick={() => setEditingTags(false)}>
+                    Annulla
+                  </button>
+                  {saveTags.isError && <span className="text-sm text-red-600">Errore nel salvataggio.</span>}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {(loc.smart_tags ?? []).map((t) => (
+                  <TagChip key={t} name={t} color={tagColors[t]} />
+                ))}
+                <button
+                  className="rounded-lg px-1.5 py-0.5 text-sm text-ink/40 transition hover:bg-berry/5 hover:text-berry"
+                  title="Modifica i tag"
+                  aria-label="Modifica i tag"
+                  onClick={() => {
+                    setDraftTags(loc.smart_tags ?? []);
+                    setEditingTags(true);
+                  }}
+                >
+                  ✎
+                </button>
+                <span className="ml-2 text-sm text-ink/50">Accessibilità:</span>
+                <Stars value={loc.accessibility_rating} />
+              </div>
+            )}
             {loc.accessibility_notes && <p className="mt-1 text-xs text-ink/50">{loc.accessibility_notes}</p>}
             {loc.availability_rules && (
               <p className="mt-2 text-xs font-medium text-yellow-800">Disponibilità: {loc.availability_rules}</p>
@@ -133,7 +222,7 @@ export default function LocationDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           {/* spaces */}
-          <Card title="Spazi e capienze">
+          <CollapsibleSection storageKey="locdetail:spazi" title="Spazi e capienze" defaultOpen>
             {loc.spaces.length === 0 ? (
               <EmptyState title="Nessuno spazio censito" />
             ) : (
@@ -182,10 +271,12 @@ export default function LocationDetailPage() {
                 </table>
               </div>
             )}
-          </Card>
+          </CollapsibleSection>
 
           {/* logistics */}
-          <Card
+          <CollapsibleSection
+            storageKey="locdetail:logistica"
+            defaultOpen
             title={
               <span className="flex items-center gap-2">
                 Logistica
@@ -225,10 +316,10 @@ export default function LocationDetailPage() {
             ) : (
               <EmptyState title="Logistica non compilata" />
             )}
-          </Card>
+          </CollapsibleSection>
 
           {/* technical */}
-          <Card title="Scheda tecnica">
+          <CollapsibleSection storageKey="locdetail:tecnica" title="Scheda tecnica" defaultOpen>
             {loc.technical ? (
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
                 <Info label="Potenza max" value={loc.technical.max_kw != null ? `${loc.technical.max_kw} kW` : undefined} />
@@ -241,10 +332,10 @@ export default function LocationDetailPage() {
             ) : (
               <EmptyState title="Dati tecnici non compilati" />
             )}
-          </Card>
+          </CollapsibleSection>
 
           {/* setup & party */}
-          <Card title="Allestimenti e party">
+          <CollapsibleSection storageKey="locdetail:allestimenti" title="Allestimenti e party">
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div>
                 <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink/40">Allestimenti</h3>
@@ -311,10 +402,10 @@ export default function LocationDetailPage() {
                 )}
               </div>
             </div>
-          </Card>
+          </CollapsibleSection>
 
           {/* price lists */}
-          <Card title="Listini">
+          <CollapsibleSection storageKey="locdetail:listini" title="Listini">
             {loc.price_lists.length === 0 ? (
               <EmptyState title="Nessun listino" />
             ) : (
@@ -359,10 +450,10 @@ export default function LocationDetailPage() {
                 ))}
               </div>
             )}
-          </Card>
+          </CollapsibleSection>
 
           {/* usage */}
-          <Card title="Utilizzo in progetti ed eventi">
+          <CollapsibleSection storageKey="locdetail:utilizzo" title="Utilizzo in progetti ed eventi">
             {(usage ?? []).length === 0 ? (
               <EmptyState title="Mai proposta o utilizzata finora" />
             ) : (
@@ -383,10 +474,10 @@ export default function LocationDetailPage() {
                 ))}
               </ul>
             )}
-          </Card>
+          </CollapsibleSection>
 
           {/* history */}
-          <Card title="Cronologia">
+          <CollapsibleSection storageKey="locdetail:cronologia" title="Cronologia">
             {(history ?? []).length === 0 ? (
               <EmptyState title="Nessuna attività registrata" />
             ) : (
@@ -401,7 +492,7 @@ export default function LocationDetailPage() {
                 ))}
               </ol>
             )}
-          </Card>
+          </CollapsibleSection>
         </div>
 
         {/* sidebar */}
@@ -412,38 +503,88 @@ export default function LocationDetailPage() {
             </Card>
           )}
 
-          <Card title="Referenti">
+          <CollapsibleSection
+            storageKey="locdetail:referenti"
+            title={`Referenti (${loc.contacts.length})`}
+            action={
+              <button
+                className="rounded-lg border border-berry/25 bg-white px-2.5 py-1 text-xs font-semibold text-berry transition hover:bg-berry/5"
+                onClick={() => setContactOpen(true)}
+              >
+                + Aggiungi referente
+              </button>
+            }
+          >
             {loc.contacts.length === 0 ? (
               <p className="text-sm text-ink/40">Nessun referente</p>
             ) : (
               <ul className="space-y-3 text-sm">
                 {loc.contacts.map((c, i) => (
-                  <li key={i} className="rounded-lg bg-tint/50 px-3 py-2.5">
-                    <p className="font-semibold text-ink">
-                      {c.contact.first_name} {c.contact.last_name}
-                    </p>
-                    <p className="text-xs text-ink/50">
-                      {c.role}
-                      {c.company ? ` · ${c.company.name}` : ""}
-                    </p>
-                    <p className="mt-1 text-xs text-ink/60">
-                      {[c.contact.phone, c.contact.email].filter(Boolean).join(" · ")}
-                    </p>
+                  <li key={`${c.contact.id}-${i}`} className="rounded-lg bg-tint/50 px-3 py-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-ink">
+                          {c.contact.first_name} {c.contact.last_name}
+                        </p>
+                        <p className="text-xs text-ink/50">
+                          {c.role}
+                          {c.company ? ` · ${c.company.name}` : ""}
+                        </p>
+                        <p className="mt-1 text-xs text-ink/60">
+                          {[c.contact.phone, c.contact.email].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <button
+                        className="shrink-0 rounded-lg px-1.5 py-0.5 text-sm text-ink/30 transition hover:bg-red-50 hover:text-red-600"
+                        title="Rimuovi referente"
+                        disabled={removeContact.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Scollegare ${c.contact.first_name} ${c.contact.last_name} da questa location?`))
+                            removeContact.mutate(c.contact.id);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
             )}
-          </Card>
+          </CollapsibleSection>
 
-          <Card title="Fornitori">
+          <CollapsibleSection
+            storageKey="locdetail:fornitori"
+            title={`Fornitori (${loc.suppliers.length})`}
+            action={
+              <button
+                className="rounded-lg border border-berry/25 bg-white px-2.5 py-1 text-xs font-semibold text-berry transition hover:bg-berry/5"
+                onClick={() => setSupplierOpen(true)}
+              >
+                + Aggiungi fornitore
+              </button>
+            }
+          >
             {loc.suppliers.length === 0 ? (
               <p className="text-sm text-ink/40">Nessun fornitore collegato</p>
             ) : (
               <ul className="space-y-3 text-sm">
                 {loc.suppliers.map((s) => (
                   <li key={s.id} className="rounded-lg bg-tint/50 px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2">
                       <p className="font-semibold text-ink">{s.company.name}</p>
+                      <button
+                        className="shrink-0 rounded-lg px-1.5 py-0.5 text-sm text-ink/30 transition hover:bg-red-50 hover:text-red-600"
+                        title="Rimuovi fornitore"
+                        disabled={removeSupplier.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Scollegare ${s.company.name} da questa location?`)) removeSupplier.mutate(s.id);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <Badge className="bg-berry/5 text-berry border-berry/15">{s.category.replaceAll("_", " ")}</Badge>
                       <Badge
                         className={
                           s.requirement === "obbligatorio"
@@ -454,15 +595,21 @@ export default function LocationDetailPage() {
                         {s.requirement}
                       </Badge>
                     </div>
-                    <p className="text-xs text-ink/50">{s.category.replaceAll("_", " ")}</p>
+                    {s.contact && (
+                      <p className="mt-1.5 text-xs text-ink/60">
+                        Referente: <span className="font-medium text-ink/80">{s.contact.first_name} {s.contact.last_name}</span>
+                        {[s.contact.phone, s.contact.email].filter(Boolean).length > 0 &&
+                          ` · ${[s.contact.phone, s.contact.email].filter(Boolean).join(" · ")}`}
+                      </p>
+                    )}
                     {s.conditions && <p className="mt-1 text-xs text-ink/60">{s.conditions}</p>}
                   </li>
                 ))}
               </ul>
             )}
-          </Card>
+          </CollapsibleSection>
 
-          <Card title="Media">
+          <CollapsibleSection storageKey="locdetail:media" title="Media">
             {loc.media.length === 0 ? (
               <p className="text-sm text-ink/40">Nessun media</p>
             ) : (
@@ -481,9 +628,9 @@ export default function LocationDetailPage() {
                 ))}
               </div>
             )}
-          </Card>
+          </CollapsibleSection>
 
-          <Card title="Note di progetto">
+          <CollapsibleSection storageKey="locdetail:note" title="Note di progetto">
             {(loc.project_notes ?? []).length === 0 ? (
               <p className="text-sm text-ink/40">Nessuna nota specifica di progetto</p>
             ) : (
@@ -499,16 +646,18 @@ export default function LocationDetailPage() {
                 ))}
               </ul>
             )}
-          </Card>
+          </CollapsibleSection>
 
           {loc.impressions && (
-            <Card title="Impressioni">
+            <CollapsibleSection storageKey="locdetail:impressioni" title="Impressioni">
               <p className="text-sm italic leading-relaxed text-ink/70">“{loc.impressions}”</p>
-            </Card>
+            </CollapsibleSection>
           )}
-
         </div>
       </div>
+
+      <AddSupplierDialog locationId={id} open={supplierOpen} onClose={() => setSupplierOpen(false)} />
+      <AddContactDialog locationId={id} open={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }

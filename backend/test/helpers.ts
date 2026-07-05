@@ -6,6 +6,7 @@ import type { Repos } from '../src/db/repos/index.js';
 import type { AiService } from '../src/ai/service.js';
 import type { StorageService } from '../src/storage/s3.js';
 import type { ExtractedLocationDraft } from '../src/ai/extraction.js';
+import type { GeocodeFn } from '../src/lib/geocode.js';
 
 export const TEST_SECRET = 'test-secret';
 
@@ -111,6 +112,16 @@ export function makeRepos(overrides: SectionOverrides = {}): Repos {
       getPoi: vi.fn(async () => null),
       createPoi: vi.fn(async (input: Record<string, unknown>) => ({ id: 'poi-1', ...input })),
     },
+    tags: {
+      list: vi.fn(async () => []),
+      getById: vi.fn(async () => null),
+      findByName: vi.fn(async () => null),
+      create: vi.fn(async (input: Record<string, unknown>) => ({ id: 'tag-1', createdAt: new Date(), ...input })),
+      update: vi.fn(async () => null),
+      delete: vi.fn(async () => true),
+      upsertMissing: vi.fn(async () => []),
+      renameInArrays: vi.fn(async () => undefined),
+    },
     ingestion: {
       create: vi.fn(async (input: Record<string, unknown>) => ({
         id: 'job-1',
@@ -179,23 +190,26 @@ export interface TestContext {
   repos: Repos;
   ai: AiService;
   storage: StorageService;
+  geocode: GeocodeFn;
   tokens: { admin: string; editor: string; viewer: string };
 }
 
 export async function buildTestApp(
-  overrides: { repos?: SectionOverrides; ai?: Partial<AiService> } = {},
+  overrides: { repos?: SectionOverrides; ai?: Partial<AiService>; geocode?: GeocodeFn } = {},
 ): Promise<TestContext> {
   const repos = makeRepos(overrides.repos);
   const ai = makeAi(overrides.ai);
   const storage = makeStorage();
-  const deps: AppDeps = { repos, ai, storage, jwtSecret: TEST_SECRET };
+  // Hermetic by default: tests never hit the real Nominatim service.
+  const geocode = overrides.geocode ?? vi.fn(async () => []);
+  const deps: AppDeps = { repos, ai, storage, geocode, jwtSecret: TEST_SECRET };
   const app = await buildApp(deps);
   const tokens = {
     admin: signToken({ id: 'u-admin', email: 'admin@test.it', name: 'Admin', role: 'admin' }, TEST_SECRET),
     editor: signToken({ id: 'u-editor', email: 'editor@test.it', name: 'Editor', role: 'editor' }, TEST_SECRET),
     viewer: signToken({ id: 'u-viewer', email: 'viewer@test.it', name: 'Viewer', role: 'viewer' }, TEST_SECRET),
   };
-  return { app, repos, ai, storage, tokens };
+  return { app, repos, ai, storage, geocode, tokens };
 }
 
 export const auth = (token: string) => ({ authorization: `Bearer ${token}` });

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
-import { activateDemo, isAuthenticated, setToken } from "@/lib/auth";
+import { consumeSessionExpired, isAuthenticated, setToken } from "@/lib/auth";
 import { btnPrimary, inputCls, labelCls } from "@/components/ui";
 
 export default function LoginPage() {
@@ -11,31 +11,34 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (consumeSessionExpired()) setNotice("Sessione scaduta, accedi di nuovo.");
     if (isAuthenticated()) router.replace("/");
   }, [router]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setLoading(true);
     try {
       const res = await api.login(email, password);
       setToken(res.token);
       router.replace("/");
-    } catch {
-      setError("Credenziali non valide o servizio non disponibile.");
+    } catch (err) {
+      if (err instanceof api.NetworkError) {
+        setError("Impossibile raggiungere il server — riprova.");
+      } else if (err instanceof api.ApiError && err.status === 401) {
+        setError("Credenziali non valide.");
+      } else {
+        setError("Errore durante l'accesso. Riprova.");
+      }
     } finally {
       setLoading(false);
     }
-  };
-
-  const enterDemo = () => {
-    activateDemo();
-    setToken("demo-token");
-    router.replace("/");
   };
 
   return (
@@ -51,6 +54,9 @@ export default function LoginPage() {
           </div>
         </div>
         <form onSubmit={submit} className="space-y-4 rounded-2xl bg-white p-8 shadow-2xl">
+          {notice && (
+            <p className="rounded-lg bg-gold/15 px-3 py-2 text-sm font-medium text-yellow-800">{notice}</p>
+          )}
           <div>
             <label className={labelCls}>Email</label>
             <input
@@ -76,16 +82,6 @@ export default function LoginPage() {
           <button className={`${btnPrimary} w-full justify-center`} disabled={loading}>
             {loading ? "Accesso in corso…" : "Accedi"}
           </button>
-          <button
-            type="button"
-            onClick={enterDemo}
-            className="w-full rounded-lg border border-gold/40 bg-gold/10 px-4 py-2 text-sm font-semibold text-yellow-800 transition hover:bg-gold/20"
-          >
-            Entra in modalità demo
-          </button>
-          <p className="text-center text-xs text-ink/40">
-            La modalità demo usa dati di esempio e non richiede il backend.
-          </p>
         </form>
       </div>
     </div>

@@ -134,6 +134,20 @@ export const SUPPLIER_CATEGORIES = [
   "vigilanza",
 ];
 
+/** Fixed palette for smart tag colors (berry-first, on-brand). */
+export const TAG_COLORS = [
+  "#6D2E46", // berry
+  "#A26769", // rose
+  "#C9A227", // gold
+  "#2F6B4F", // green
+  "#3D5A80", // blue
+  "#7A5BA6", // violet
+  "#B65C33", // terracotta
+  "#4A7A8C", // teal
+];
+
+export const DEFAULT_TAG_COLOR = "#A26769";
+
 export function tagLabel(tag: string): string {
   return tag.replaceAll("_", " ");
 }

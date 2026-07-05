@@ -11,7 +11,6 @@ import {
   CONFIG_LABELS,
   EFFECTIVE_STATUS_CLASSES,
   EFFECTIVE_STATUS_LABELS,
-  SMART_TAGS,
   tagLabel,
 } from "@/lib/labels";
 import { lngLatOf, type Configuration, type EffectiveStatus, type LocationFilters } from "@/lib/types";
@@ -38,6 +37,7 @@ export default function LocationsPage() {
   );
 
   const { data: all } = useQuery({ queryKey: ["locations", "all"], queryFn: () => api.listLocations() });
+  const { data: allTags } = useQuery({ queryKey: ["tags"], queryFn: () => api.listTags() });
   const { data: locations, isLoading } = useQuery({
     queryKey: ["locations", filters],
     queryFn: () => api.listLocations(filters),
@@ -108,9 +108,9 @@ export default function LocationsPage() {
         </select>
         <select className={inputCls} value={tag} onChange={(e) => setTag(e.target.value)}>
           <option value="">Tutti i tag</option>
-          {SMART_TAGS.map((t) => (
-            <option key={t} value={t}>
-              {tagLabel(t)}
+          {(allTags ?? []).map((t) => (
+            <option key={t.id} value={t.name}>
+              {tagLabel(t.name)}
             </option>
           ))}
         </select>

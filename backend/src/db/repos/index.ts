@@ -3,6 +3,7 @@ import { createUsersRepo, type UsersRepo } from './usersRepo.js';
 import { createLocationsRepo, type LocationsRepo } from './locationsRepo.js';
 import { createProjectsRepo, type ProjectsRepo } from './projectsRepo.js';
 import { createRegistryRepo, type RegistryRepo } from './registryRepo.js';
+import { createTagsRepo, type TagsRepo } from './tagsRepo.js';
 import { createIngestionRepo, type IngestionRepo } from './ingestionRepo.js';
 import { createSearchRepo, type SearchRepo } from './searchRepo.js';
 
@@ -11,6 +12,7 @@ export interface Repos {
   locations: LocationsRepo;
   projects: ProjectsRepo;
   registry: RegistryRepo;
+  tags: TagsRepo;
   ingestion: IngestionRepo;
   search: SearchRepo;
 }
@@ -21,6 +23,7 @@ export function createRepos(db: Db): Repos {
     locations: createLocationsRepo(db),
     projects: createProjectsRepo(db),
     registry: createRegistryRepo(db),
+    tags: createTagsRepo(db),
     ingestion: createIngestionRepo(db),
     search: createSearchRepo(db),
   };

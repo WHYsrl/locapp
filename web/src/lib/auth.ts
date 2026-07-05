@@ -1,9 +1,7 @@
-// Token storage + demo-mode flags (client-side only).
-
-export const DEMO_ENV = process.env.NEXT_PUBLIC_DEMO === "1";
+// Token storage (client-side only).
 
 const TOKEN_KEY = "venuescout_token";
-const DEMO_KEY = "venuescout_demo";
+const EXPIRED_KEY = "venuescout_session_expired";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -20,20 +18,21 @@ export function clearToken(): void {
   window.localStorage.removeItem(TOKEN_KEY);
 }
 
-/** True when demo mode is active: forced via env or triggered by API fallback. */
-export function isDemoActive(): boolean {
-  if (DEMO_ENV) return true;
-  if (typeof window === "undefined") return false;
-  return window.sessionStorage.getItem(DEMO_KEY) === "1";
-}
-
-export function activateDemo(): void {
+/** Mark that the session expired (401): the login page shows a message. */
+export function flagSessionExpired(): void {
   if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(DEMO_KEY, "1");
-  window.dispatchEvent(new Event("venuescout:demo"));
+  window.sessionStorage.setItem(EXPIRED_KEY, "1");
 }
 
-/** Whether the user can access the app (has token or demo mode). */
+/** Read-and-clear the session-expired flag. */
+export function consumeSessionExpired(): boolean {
+  if (typeof window === "undefined") return false;
+  const expired = window.sessionStorage.getItem(EXPIRED_KEY) === "1";
+  if (expired) window.sessionStorage.removeItem(EXPIRED_KEY);
+  return expired;
+}
+
+/** Whether the user can access the app (has a token). */
 export function isAuthenticated(): boolean {
-  return isDemoActive() || !!getToken();
+  return !!getToken();
 }

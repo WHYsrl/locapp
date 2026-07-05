@@ -439,6 +439,19 @@ struct Contact: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// Smart-tag registry entry (GET /tags). `color` is an optional hex string.
+struct Tag: Codable, Hashable, Sendable, Identifiable {
+    var id: String
+    var name: String
+    var color: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case color
+    }
+}
+
 /// Referente of a location. Shape assumed flat (contact fields + role + company name).
 struct LocationContact: Codable, Hashable, Sendable, Identifiable {
     var contactId: String
@@ -715,6 +728,8 @@ struct Project: Codable, Hashable, Sendable, Identifiable {
     var status: ProjectStatus?
     var notes: String?
     var events: [Event]?
+    /// Free-form labels; default keeps existing memberwise-init call sites valid.
+    var tags: [String]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -723,6 +738,7 @@ struct Project: Codable, Hashable, Sendable, Identifiable {
         case status
         case notes
         case events
+        case tags
     }
 }
 
@@ -739,6 +755,8 @@ struct Event: Codable, Hashable, Sendable, Identifiable {
     var sort: Int?
     /// Shortlist counts keyed by EventLocationStatus raw value (GET /projects/:id).
     var locationCounts: [String: Int]?
+    /// Free-form labels; default keeps existing memberwise-init call sites valid.
+    var tags: [String]? = nil
 
     var totalShortlisted: Int {
         (locationCounts ?? [:]).values.reduce(0, +)
@@ -756,6 +774,7 @@ struct Event: Codable, Hashable, Sendable, Identifiable {
         case notes
         case sort
         case locationCounts = "location_counts"
+        case tags
     }
 }
 
@@ -1449,6 +1468,7 @@ extension Project {
         status = try? c.decodeIfPresent(ProjectStatus.self, forKey: .status)
         notes = try? c.decodeIfPresent(String.self, forKey: .notes)
         events = c.lossyList(Event.self, .events)
+        tags = c.lossyStringArray(.tags)
     }
 }
 
@@ -1466,6 +1486,7 @@ extension Event {
         notes = try? c.decodeIfPresent(String.self, forKey: .notes)
         sort = c.lossyInt(.sort)
         locationCounts = try? c.decodeIfPresent([String: Int].self, forKey: .locationCounts)
+        tags = c.lossyStringArray(.tags)
     }
 }
 
@@ -1624,6 +1645,16 @@ extension IngestionJob {
 }
 
 // MARK: Registry
+
+extension Tag {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = (try? c.decode(String.self, forKey: .name)) ?? "Tag"
+        // Some backends expose numeric ids; fall back to the name as identity.
+        id = c.lossyString(.id) ?? name
+        color = c.lossyString(.color)
+    }
+}
 
 extension Company {
     init(from decoder: Decoder) throws {

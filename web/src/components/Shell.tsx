@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { clearToken, isAuthenticated, isDemoActive } from "@/lib/auth";
+import { useQueryClient } from "@tanstack/react-query";
+import { NetworkError } from "@/lib/api";
+import { clearToken, isAuthenticated } from "@/lib/auth";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: "◧" },
@@ -12,20 +14,50 @@ const NAV = [
   { href: "/ingest", label: "Acquisizione AI", icon: "⇪" },
   { href: "/projects", label: "Progetti", icon: "▤" },
   { href: "/contatti", label: "Contatti", icon: "☎" },
+  { href: "/tag", label: "Tag", icon: "#" },
 ];
+
+/** Global banner shown when any query failed with a network-level error. */
+function NetworkErrorBanner() {
+  const qc = useQueryClient();
+  const [visible, setVisible] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  useEffect(() => {
+    const cache = qc.getQueryCache();
+    const check = () =>
+      setVisible(cache.getAll().some((q) => q.state.error instanceof NetworkError));
+    check();
+    return cache.subscribe(check);
+  }, [qc]);
+
+  if (!visible) return null;
+
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+      <p className="text-sm font-medium text-red-700">Impossibile raggiungere il server — riprova</p>
+      <button
+        className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+        disabled={retrying}
+        onClick={async () => {
+          setRetrying(true);
+          try {
+            await qc.invalidateQueries();
+          } finally {
+            setRetrying(false);
+          }
+        }}
+      >
+        {retrying ? "Nuovo tentativo…" : "Riprova"}
+      </button>
+    </div>
+  );
+}
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [demo, setDemo] = useState(false);
   const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    setDemo(isDemoActive());
-    const onDemo = () => setDemo(true);
-    window.addEventListener("venuescout:demo", onDemo);
-    return () => window.removeEventListener("venuescout:demo", onDemo);
-  }, []);
 
   useEffect(() => {
     if (pathname === "/login") {
@@ -68,12 +100,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="px-3 pb-6">
-          {demo && (
-            <div className="mb-3 rounded-lg bg-gold/20 px-3 py-2 text-xs font-medium text-gold">
-              Modalità demo attiva
-              <span className="mt-0.5 block font-normal text-white/60">Dati di esempio, nessun backend</span>
-            </div>
-          )}
           <button
             onClick={() => {
               clearToken();
@@ -86,7 +112,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       <main className="ml-60 min-h-screen flex-1 px-8 py-8">
-        <div className="mx-auto max-w-6xl">{ready ? children : null}</div>
+        <div className="mx-auto max-w-6xl">
+          <NetworkErrorBanner />
+          {ready ? children : null}
+        </div>
       </main>
     </div>
   );

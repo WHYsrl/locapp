@@ -178,6 +178,24 @@ struct CreateProjectRequest: Codable, Sendable {
     }
 }
 
+struct CreateTagRequest: Codable, Sendable {
+    var name: String
+    var color: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case color
+    }
+}
+
+struct UpdateLocationTagsRequest: Codable, Sendable {
+    var smartTags: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case smartTags = "smart_tags"
+    }
+}
+
 struct FeedbackItem: Codable, Sendable {
     var subjectType: String // location | company | contact
     var subjectId: String?
@@ -360,6 +378,28 @@ actor APIClient {
         // Response is `{data:[{type,at,data}]}`, not a bare array.
         let envelope: DataEnvelope<HistoryEntry> = try await send("GET", "locations/\(id)/history")
         return envelope.data
+    }
+
+    // MARK: Tags
+
+    func fetchTags() async throws -> [Tag] {
+        // Response is a bare array `[{id,name,color?}]`; items decoded lossily.
+        let list: LossyArray<Tag> = try await send("GET", "tags")
+        return list.elements
+    }
+
+    func createTag(name: String, color: String? = nil) async throws -> Tag {
+        try await send("POST", "tags", body: CreateTagRequest(name: name, color: color))
+    }
+
+    /// PATCH /locations/:id with `{smart_tags:[...]}`. Unknown names are
+    /// auto-registered server-side. The response body is intentionally ignored
+    /// (callers update local state), so any response shape is tolerated.
+    func updateLocationTags(id: String, tags: [String]) async throws {
+        let _: EmptyResponse = try await send(
+            "PATCH", "locations/\(id)",
+            body: UpdateLocationTagsRequest(smartTags: tags)
+        )
     }
 
     // MARK: Ingestion

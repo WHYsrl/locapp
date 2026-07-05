@@ -48,7 +48,7 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     });
 
     // Fire-and-forget async processing; job status is polled via GET /ingest/:jobId.
-    void processIngestionJob(job, repos, ai).catch((err) => app.log.error(err));
+    void processIngestionJob(job, repos, ai, app.deps.geocode).catch((err) => app.log.error(err));
 
     reply.status(201);
     return rowToApi(job);
