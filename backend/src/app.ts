@@ -23,6 +23,7 @@ import { companyRoutes } from './routes/companies.js';
 import { contactRoutes } from './routes/contacts.js';
 import { geocodeRoutes } from './routes/geocode.js';
 import type { GeocodeFn } from './lib/geocode.js';
+import type { MapThumbRenderer } from './lib/staticmap.js';
 
 export interface AppDeps {
   repos: Repos;
@@ -31,6 +32,8 @@ export interface AppDeps {
   jwtSecret: string;
   /** Optional geocoder override (tests); defaults to OSM Nominatim. */
   geocode?: GeocodeFn;
+  /** Optional map thumbnail renderer override (tests); defaults to OSM tiles + sharp. */
+  renderMapThumb?: MapThumbRenderer;
 }
 
 declare module 'fastify' {

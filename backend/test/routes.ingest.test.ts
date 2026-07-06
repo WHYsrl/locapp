@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildTestApp, auth, sampleDraft } from './helpers.js';
 import { enrichDraftWithGeocoding } from '../src/ingest/process.js';
 import type { GeocodeCandidate } from '../src/lib/geocode.js';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -133,6 +137,173 @@ describe('ingest routes', () => {
   });
 });
 
+describe('ingest photos from url ingestion', () => {
+  const readyJob = (extracted: unknown) => ({
+    id: 'job-1',
+    locationId: 'loc-1',
+    status: 'ready',
+    extracted,
+    sourceType: 'url',
+    createdAt: new Date(),
+  });
+
+  it('url ingestion adds proposed_media candidates scraped from the page', async () => {
+    const html = `<html><head><meta property="og:image" content="https://venue.example/img/hero.jpg"></head>
+      <body><h1>Villa dei Pini</h1><p>Firenze</p>
+      <img src="/img/sala.jpg"><img src="/img/logo.png"><img src="/img/mini.jpg" width="90"></body></html>`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(html, { status: 200, headers: { 'content-type': 'text/html' } })),
+    );
+    const updates: Array<Record<string, unknown>> = [];
+    const ctx = await buildTestApp({
+      repos: {
+        ingestion: {
+          update: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+            updates.push(patch);
+            return { id, ...patch };
+          }),
+        },
+      },
+      ai: { extractLocationDraft: vi.fn(async () => structuredClone(sampleDraft)) },
+    });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/ingest',
+      headers: auth(ctx.tokens.editor),
+      payload: { source_type: 'url', url: 'https://venue.example/location' },
+    });
+    expect(res.statusCode).toBe(201);
+    await flush();
+
+    const final = updates.at(-1)!;
+    expect(final['status']).toBe('ready');
+    expect((final['extracted'] as { proposed_media: Array<{ url: string }> }).proposed_media).toEqual([
+      { url: 'https://venue.example/img/hero.jpg' },
+      { url: 'https://venue.example/img/sala.jpg' },
+    ]);
+  });
+
+  it('apply downloads selected_media_urls, uploads to S3 and creates foto media rows', async () => {
+    const jpegBytes = Buffer.from('fake-jpeg-bytes');
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/pagina.html')) {
+        return new Response('nope', { status: 200, headers: { 'content-type': 'text/html' } });
+      }
+      return new Response(jpegBytes, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const mediaRows: Array<Record<string, unknown>> = [];
+    const ctx = await buildTestApp({
+      repos: {
+        ingestion: { getById: async () => readyJob(sampleDraft) },
+        locations: {
+          createMedia: vi.fn(async (input: Record<string, unknown>) => {
+            mediaRows.push(input);
+            return { id: 'media-1', ...input };
+          }),
+        },
+      },
+    });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/ingest/job-1/apply',
+      headers: auth(ctx.tokens.editor),
+      payload: {
+        accept: { 'location.name': true },
+        selected_media_urls: ['https://venue.example/img/sala.jpg', 'https://venue.example/pagina.html'],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    // First URL imported: direct S3 PutObject with the web ingestion key layout.
+    expect(ctx.storage.putObject).toHaveBeenCalledOnce();
+    expect(ctx.storage.putObject).toHaveBeenCalledWith(
+      'locations/loc-1/web/1.jpg',
+      expect.any(Buffer),
+      'image/jpeg',
+    );
+    expect(mediaRows).toEqual([
+      {
+        locationId: 'loc-1',
+        kind: 'foto',
+        category: null,
+        url: 'locations/loc-1/web/1.jpg',
+        filename: 'sala.jpg',
+        mime: 'image/jpeg',
+      },
+    ]);
+    expect(body.imported_media).toEqual(['locations/loc-1/web/1.jpg']);
+    // Second URL rejected: not an image content-type — warning, not failure.
+    expect(body.warnings).toHaveLength(1);
+    expect(body.warnings[0]).toContain('foto non importata');
+    expect(body.warnings[0]).toContain('content-type non immagine');
+  });
+
+  it('apply rejects images over the 8MB cap with a warning', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(Buffer.from('x'), {
+            status: 200,
+            headers: { 'content-type': 'image/jpeg', 'content-length': String(9 * 1024 * 1024) },
+          }),
+      ),
+    );
+    const ctx = await buildTestApp({
+      repos: { ingestion: { getById: async () => readyJob(sampleDraft) } },
+    });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/ingest/job-1/apply',
+      headers: auth(ctx.tokens.editor),
+      payload: { accept: {}, selected_media_urls: ['https://venue.example/img/enorme.jpg'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(ctx.storage.putObject).not.toHaveBeenCalled();
+    expect(res.json().warnings[0]).toContain('oltre il limite di 8MB');
+  });
+
+  it('apply with unconfigured storage skips photos with a warning instead of failing', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = await buildTestApp({
+      repos: { ingestion: { getById: async () => readyJob(sampleDraft) } },
+      storage: { isConfigured: vi.fn(() => false) },
+    });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/ingest/job-1/apply',
+      headers: auth(ctx.tokens.editor),
+      payload: { accept: { 'location.name': true }, selected_media_urls: ['https://venue.example/img/sala.jpg'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.applied_fields).toEqual(['location.name']);
+    expect(body.warnings).toEqual(['storage_not_configured — foto non importate']);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(ctx.repos.locations.createMedia).not.toHaveBeenCalled();
+  });
+
+  it('apply without selected_media_urls stays photo-free and warning-free', async () => {
+    const ctx = await buildTestApp({
+      repos: { ingestion: { getById: async () => readyJob(sampleDraft) } },
+    });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/ingest/job-1/apply',
+      headers: auth(ctx.tokens.editor),
+      payload: { accept: { 'location.name': true } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().warnings).toEqual([]);
+    expect(res.json().imported_media).toEqual([]);
+  });
+});
+
 describe('ingest geocoding enrichment', () => {
   it('pipeline proposes geom + maps link in the draft when an address is found', async () => {
     const updates: Array<Record<string, unknown>> = [];
@@ -159,8 +330,8 @@ describe('ingest geocoding enrichment', () => {
     expect(res.statusCode).toBe(201);
     await flush();
 
-    // Draft has name + city but no address_line: query falls back to name, city, country.
-    expect(geocode).toHaveBeenCalledWith('Villa dei Pini, Firenze, Italia');
+    // Draft has name + city but no address_line: variant fallback lands on "name, city".
+    expect(geocode).toHaveBeenCalledWith('Villa dei Pini, Firenze');
     const final = updates.at(-1)!;
     expect(final['status']).toBe('ready');
     const extracted = final['extracted'] as {

@@ -60,6 +60,10 @@ interface FormState {
 }
 
 function fromDetail(loc?: LocationDetail | null): FormState {
+  // Il backend emette lat, lon E lng: leggi lng ?? lon (fallback geom) così le
+  // coordinate salvate tornano sempre visibili in modifica (round-trip).
+  const lngVal = loc?.lng ?? loc?.lon ?? loc?.geom?.coordinates?.[0] ?? null;
+  const latVal = loc?.lat ?? loc?.geom?.coordinates?.[1] ?? null;
   return {
     name: loc?.name ?? "",
     parent_location_id: loc?.parent_location_id ?? "",
@@ -72,8 +76,8 @@ function fromDetail(loc?: LocationDetail | null): FormState {
     email: loc?.email ?? "",
     website: loc?.website ?? "",
     google_maps_url: loc?.google_maps_url ?? "",
-    lng: loc?.lng != null ? String(loc.lng) : "",
-    lat: loc?.lat != null ? String(loc.lat) : "",
+    lng: lngVal != null ? String(lngVal) : "",
+    lat: latVal != null ? String(latVal) : "",
     visit_status: loc?.visit_status ?? "da_visitare",
     accessibility_rating: loc?.accessibility_rating != null ? String(loc.accessibility_rating) : "",
     accessibility_notes: loc?.accessibility_notes ?? "",
@@ -275,10 +279,13 @@ export default function LocationForm({
           </Field>
           <div className="md:col-span-2">
             <GeocodeSuggest
-              query={[f.name, f.address_line, f.city]
-                .map((s) => s.trim())
-                .filter(Boolean)
-                .join(", ")}
+              fields={{
+                name: f.name,
+                address: f.address_line,
+                city: f.city,
+                postal_code: f.postal_code,
+                province: f.province,
+              }}
               disabled={!f.name.trim() || (!f.address_line.trim() && !f.city.trim())}
               onPick={(c) =>
                 setF((prev) => ({

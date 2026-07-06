@@ -15,6 +15,7 @@ import type {
   EventLocationEntry,
   EventLocationStatus,
   GeocodeCandidate,
+  GeocodeParams,
   HistoryEntry,
   IngestSourceType,
   IngestionJob,
@@ -40,7 +41,17 @@ import type {
   User,
 } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+/** Public static map thumbnail (480x240, 404 when the location has no coords). */
+export function mapThumbUrl(locationId: string): string {
+  return `${API_URL}/api/v1/locations/${locationId}/map-thumb.png`;
+}
+
+/** Resolve API-relative paths (e.g. thumbnail_url) to absolute URLs. */
+export function resolveApiUrl(path: string): string {
+  return /^https?:\/\//i.test(path) ? path : `${API_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -234,8 +245,20 @@ export function deleteMedia(id: string): Promise<void> {
 
 // ---- geocoding ----
 
-export function geocode(q: string): Promise<GeocodeCandidate[]> {
-  return unwrap(http(`/geocode${qs({ q })}`));
+/**
+ * Geocoding: accetta i parametri strutturati (name, address, city,
+ * postal_code, province) — hit rate migliore della sola q libera.
+ */
+export function geocode(params: GeocodeParams): Promise<GeocodeCandidate[]> {
+  const query = qs({
+    q: params.q,
+    name: params.name,
+    address: params.address,
+    city: params.city,
+    postal_code: params.postal_code,
+    province: params.province,
+  });
+  return unwrap(http(`/geocode${query}`));
 }
 
 // ---- location suppliers & contacts ----
@@ -316,10 +339,16 @@ export function getIngestJob(id: string): Promise<IngestionJob> {
   return http(`/ingest/${id}`);
 }
 
-export function applyIngestJob(id: string, accept: Record<string, boolean>): Promise<{ location_id: string }> {
+export function applyIngestJob(
+  id: string,
+  accept: Record<string, boolean>,
+  selectedMediaUrls?: string[]
+): Promise<{ location_id: string; warnings?: string[] }> {
+  const body: Record<string, unknown> = { accept };
+  if (selectedMediaUrls !== undefined) body.selected_media_urls = selectedMediaUrls;
   return http(`/ingest/${id}/apply`, {
     method: "POST",
-    body: JSON.stringify({ accept }),
+    body: JSON.stringify(body),
   });
 }
 

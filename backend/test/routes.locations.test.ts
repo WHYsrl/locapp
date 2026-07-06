@@ -183,6 +183,110 @@ describe('location routes', () => {
     });
   });
 
+  it('POST /locations accepts lat+lng (web client shape) and stores geom {lon, lat}', async () => {
+    const creates: Array<Record<string, unknown>> = [];
+    const ctx = await buildTestApp({
+      repos: {
+        locations: {
+          create: vi.fn(async (input: Record<string, unknown>) => {
+            creates.push(input);
+            return { ...parentLocation, id: 'loc-new' };
+          }),
+        },
+      },
+    });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/locations',
+      headers: auth(ctx.tokens.editor),
+      payload: { name: 'Palazzo Nuovo', lat: 41.9109, lng: 12.4534 },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(creates[0]!['geom']).toEqual({ lon: 12.4534, lat: 41.9109 });
+  });
+
+  it('coordinate input precedence is geom > lat/lng > lat/lon', async () => {
+    const patches: Array<Record<string, unknown>> = [];
+    const ctx = await buildTestApp({
+      repos: {
+        locations: {
+          update: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+            patches.push(patch);
+            return { ...parentLocation, id };
+          }),
+        },
+      },
+    });
+    const patch = (payload: Record<string, unknown>) =>
+      ctx.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/locations/loc-parent',
+        headers: auth(ctx.tokens.editor),
+        payload,
+      });
+
+    await patch({ lat: 1, lon: 3 }); // legacy lat/lon shape still accepted
+    await patch({ lat: 1, lng: 2, lon: 3 }); // lng wins over lon
+    await patch({ lat: 1, lng: 2, geom: { lat: 45.0, lng: 9.0 } }); // geom wins over flat fields
+    expect(patches.map((p) => p['geom'])).toEqual([
+      { lon: 3, lat: 1 },
+      { lon: 2, lat: 1 },
+      { lon: 9.0, lat: 45.0 },
+    ]);
+  });
+
+  it('GET /locations list and detail emit lon, lng and lat (lng aliases lon)', async () => {
+    const ctx = await buildTestApp({
+      repos: {
+        locations: {
+          list: async () => ({ rows: [parentLocation], total: 1 }),
+          getById: async (id: string) => (id === 'loc-parent' ? parentLocation : null),
+          coordinates: async (ids: string[]) => ids.map((id) => ({ id, lon: 12.4534, lat: 41.9109 })),
+        },
+      },
+    });
+
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations',
+      headers: auth(ctx.tokens.viewer),
+    });
+    expect(list.json().data[0]).toMatchObject({ lon: 12.4534, lng: 12.4534, lat: 41.9109 });
+
+    const detail = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations/loc-parent',
+      headers: auth(ctx.tokens.viewer),
+    });
+    expect(detail.json()).toMatchObject({ lon: 12.4534, lng: 12.4534, lat: 41.9109 });
+  });
+
+  it('thumbnail_url falls back to the map-thumb route only when geom is set and no thumbnail exists', async () => {
+    const withThumb = { ...parentLocation, id: 'loc-thumb', thumbnailUrl: 'https://cdn.example/foto.jpg' };
+    const ctx = await buildTestApp({
+      repos: {
+        locations: {
+          list: async () => ({ rows: [parentLocation, withThumb, baseLocation], total: 3 }),
+          coordinates: async () => [
+            { id: 'loc-parent', lon: 12.4534, lat: 41.9109 },
+            { id: 'loc-thumb', lon: 12.4534, lat: 41.9109 },
+            // loc-child has no geometry.
+          ],
+        },
+      },
+    });
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations',
+      headers: auth(ctx.tokens.viewer),
+    });
+    const [geomNoThumb, geomWithThumb, noGeom] = res.json().data;
+    expect(geomNoThumb.thumbnail_url).toBe('/api/v1/locations/loc-parent/map-thumb.png');
+    expect(geomWithThumb.thumbnail_url).toBe('https://cdn.example/foto.jpg');
+    expect(noGeom.thumbnail_url).toBeNull();
+    expect(noGeom).toMatchObject({ lon: null, lng: null, lat: null });
+  });
+
   it('POST /locations/:id/media creates a media row with a presigned upload', async () => {
     const ctx = await buildTestApp({
       repos: { locations: { getById: async () => parentLocation } },

@@ -13,7 +13,25 @@ import {
   EFFECTIVE_STATUS_LABELS,
   tagLabel,
 } from "@/lib/labels";
-import { lngLatOf, type Configuration, type EffectiveStatus, type LocationFilters } from "@/lib/types";
+import { lngLatOf, type Configuration, type EffectiveStatus, type LocationFilters, type LocationListItem } from "@/lib/types";
+
+/** Miniatura riga: thumbnail dal serializer (mappa o cover) con fallback alla
+ *  static map; se l'immagine non è raggiungibile si nasconde (placeholder). */
+function RowThumb({ loc }: { loc: LocationListItem }) {
+  const [broken, setBroken] = useState(false);
+  const src = loc.thumbnail_url ? api.resolveApiUrl(loc.thumbnail_url) : api.mapThumbUrl(loc.id);
+  if (broken) return <div className="h-11 w-[72px] rounded-md border border-berry/10 bg-tint" aria-hidden />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      onError={() => setBroken(true)}
+      className="h-11 w-[72px] rounded-md border border-berry/10 object-cover"
+    />
+  );
+}
 
 export default function LocationsPage() {
   const [q, setQ] = useState("");
@@ -151,6 +169,7 @@ export default function LocationsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-berry/10 bg-tint/60 text-left text-xs font-semibold uppercase tracking-wide text-ink/50">
+                <th className="w-24 px-4 py-3">Mappa</th>
                 <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Città</th>
                 <th className="px-4 py-3">Tag</th>
@@ -164,6 +183,11 @@ export default function LocationsPage() {
                 const st = l.effective_status ?? l.visit_status;
                 return (
                   <tr key={l.id} className="transition hover:bg-tint/50">
+                    <td className="px-4 py-2">
+                      <Link href={`/locations/${l.id}`} className="block" tabIndex={-1} aria-hidden>
+                        <RowThumb loc={l} />
+                      </Link>
+                    </td>
                     <td className="px-4 py-3">
                       <Link href={`/locations/${l.id}`} className="font-semibold text-berry hover:underline">
                         {l.name}

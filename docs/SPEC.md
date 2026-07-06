@@ -123,6 +123,8 @@ Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[
 - `GET /locations` — filters: `q, tags, city, visit_status, min_capacity, configuration, accessibility_min, parent_id, root_only=true`
 - `POST /locations` / `GET|PATCH|DELETE /locations/:id`
   - GET returns: base card + `children[]`, `effective_logistics`/`effective_address`/`effective_contact` (inherited), `spaces[]+capacities`, `contacts[]`, `suppliers[]`, `media[]` (with kind/category/filename/mime), `price_lists[]`, `usage_summary`
+- Coordinates: POST/PATCH accept `geom:{lat,lng}`, flat `lat`+`lng`, or legacy `lat`+`lon` (precedence: geom > lat/lng > lat/lon). List and detail responses emit `lon`, `lng` (same value) and `lat` so clients can read either alias.
+- `GET /locations/:id/map-thumb.png` — **public, no auth** (like `/health`): 480x240 PNG composed from OSM raster tiles (zoom 15) with a berry marker centered on the location's geom; in-memory cache (200 entries) + `Cache-Control: public, max-age=86400`; 404 when the location has no geom. When a location has a geom and `thumbnail_url` is null, serializers set `thumbnail_url` to this route.
 - `GET /locations/:id/usage` → `[{project,event,status,dates}]` (proposta/utilizzata per requirement §2.4)
 - `GET /locations/:id/history` → timeline (site visits, events, quotes, feedback)
 - Sub-resources CRUD: `/locations/:id/spaces`, `/spaces/:id/capacities`, `/locations/:id/contacts`, `/locations/:id/suppliers`, `/locations/:id/media` (see Media), `/locations/:id/price-lists`, `/locations/:id/notes` (project notes)
@@ -137,7 +139,7 @@ Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[
 ### Ingestion (AI)
 - `POST /ingest` `{location_id?, source_type, url?, text?, media_id?}` → creates job, async processing
 - `GET /ingest/:jobId` → status + `extracted` draft
-- `POST /ingest/:jobId/apply` `{accept: {fieldPath: bool}}` → merges accepted fields into location (creates location if `location_id` null)
+- `POST /ingest/:jobId/apply` `{accept: {fieldPath: bool}, selected_media_urls?: string[]}` → merges accepted fields into location (creates location if `location_id` null). `selected_media_urls` (picked from the draft's `proposed_media`) are downloaded server-side (10s timeout, 8MB cap, content-type must be `image/*`) and uploaded to S3 (key `locations/<id>/web/<n>.<ext>`) as media rows kind `foto`; response includes `imported_media[]` + `warnings[]` (e.g. `storage_not_configured — foto non importate` when S3 is not set up — photo failures never fail the apply)
 
 ### Search
 - `POST /search/brief` `{brief, event_id?, near?: [{poi_id|address, max_minutes?}], limit=10}`
@@ -147,6 +149,7 @@ Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[
 
 ### Geocoding
 - `GET /geocode?q=...` → `{data: [{display_name, lat, lon, type, importance, google_maps_url}]}` — OSM Nominatim, Italy-only, max 5 candidates; used to propose coordinates + Google Maps link (always user-confirmed)
+- Structured alternative (preferred): `GET /geocode?name=&address=&city=&postal_code=&province=` — tries query variants in order until one returns results: (a) address+postal_code+city, (b) address+city, (c) name+city, (d) name+province; results come from the winning variant only (deduped). Ingestion enrichment uses the same fallback (`geocodeBest`).
 
 ### Smart tags (shared registry)
 - `GET /tags` — full list, no pagination
@@ -183,11 +186,14 @@ Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[
   "suppliers": [{ "company_name":"","category":"catering","requirement":"obbligatorio" }],
   "price_items": [{ "voce":"","prezzo":0,"unita":"","note":"" }],
   "open_questions": ["Chiedere potenza massima disponibile"],
-  "field_sources": { "locations.technical.max_kw": "audio 02:47" }
+  "field_sources": { "locations.technical.max_kw": "audio 02:47" },
+  "proposed_media": [{ "url": "https://venue.example/img/sala.jpg" }]
 }
 ```
 
 Claude prompt requirements: extract ONLY stated facts, mark uncertain values in `open_questions`, output valid JSON via tool-use (strict schema), Italian field content.
+
+`proposed_media` (url ingestion only) is NOT produced by the extraction schema: the pipeline appends candidate photo URLs scraped from the page after extraction (og:image + `<img>` src, absolutized, deduped, icons/logos/sprites/svg/gif and images declared <200px skipped, max 12). The user picks which to import via `selected_media_urls` on apply (§4 Ingestion).
 
 ## 6. Repo layout
 

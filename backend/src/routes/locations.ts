@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { notFound } from '../lib/errors.js';
 import { paginated, parsePagination } from '../lib/pagination.js';
 import { rowToApi, rowsToApi } from '../lib/apiMappers.js';
-import { buildHistoryTimeline, deriveUsage, resolveEffective } from '../lib/serializers.js';
+import { buildHistoryTimeline, deriveUsage, resolveEffective, withGeo } from '../lib/serializers.js';
 import { registerTags } from '../lib/tagService.js';
+import { renderMapThumb } from '../lib/staticmap.js';
 import type { CapacityConfiguration, VisitStatus } from '../db/schema.js';
 
 const IdParams = z.object({ id: z.string() });
@@ -50,6 +51,8 @@ const LocationBody = z.object({
   impressions: z.string().nullish(),
   lon: z.number().optional(),
   lat: z.number().optional(),
+  /** Alias of lon — the web client sends lat + lng. */
+  lng: z.number().optional(),
   geom: z.object({ lat: z.number(), lng: z.number() }).nullish(),
 });
 
@@ -86,18 +89,46 @@ function bodyToInsert(body: Partial<LocationBodyT>): Record<string, unknown> {
   for (const [apiKey, column] of Object.entries(map)) {
     if (apiKey in body) out[column] = (body as Record<string, unknown>)[apiKey];
   }
-  if (body.lon !== undefined && body.lat !== undefined) {
-    out['geom'] = { lon: body.lon, lat: body.lat };
+  // Coordinates come in three shapes; precedence: geom > lat/lng > lat/lon.
+  const lonValue = body.lng ?? body.lon;
+  if (lonValue !== undefined && body.lat !== undefined) {
+    out['geom'] = { lon: lonValue, lat: body.lat };
   }
-  // Alternative geom shape used by geocoding proposals: {lat, lng}.
+  // Geom shape used by geocoding proposals: {lat, lng}. Wins over flat fields.
   if (body.geom) {
     out['geom'] = { lon: body.geom.lng, lat: body.geom.lat };
   }
   return out;
 }
 
+/** Rendered map thumbnails cached in memory, capped (oldest entry evicted). */
+const THUMB_CACHE_MAX = 200;
+
 export async function locationRoutes(app: FastifyInstance): Promise<void> {
   const { repos } = app.deps;
+  const thumbCache = new Map<string, Buffer>();
+
+  // Public (no auth, like /health): consumed via <img src> which cannot send headers.
+  app.get('/locations/:id/map-thumb.png', { config: { public: true } }, async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const location = await repos.locations.getById(id);
+    if (!location) throw notFound('Location');
+    const [coord] = await repos.locations.coordinates([id]);
+    if (coord?.lon == null || coord.lat == null) throw notFound('Location geometry');
+
+    const cacheKey = `${id}:${coord.lon}:${coord.lat}`;
+    let png = thumbCache.get(cacheKey);
+    if (!png) {
+      const render = app.deps.renderMapThumb ?? renderMapThumb;
+      png = await render(coord.lat, coord.lon);
+      if (thumbCache.size >= THUMB_CACHE_MAX) {
+        thumbCache.delete(thumbCache.keys().next().value!);
+      }
+      thumbCache.set(cacheKey, png);
+    }
+    reply.header('cache-control', 'public, max-age=86400').type('image/png');
+    return reply.send(png);
+  });
 
   app.get('/locations', async (req) => {
     const q = ListQuery.parse(req.query);
@@ -116,7 +147,11 @@ export async function locationRoutes(app: FastifyInstance): Promise<void> {
       },
       p,
     );
-    return paginated(rowsToApi(rows), total, p);
+    // Emit lon/lng/lat (and the map-thumb fallback) on every list item.
+    const coords = await repos.locations.coordinates(rows.map((r) => r.id));
+    const coordById = new Map(coords.map((c) => [c.id, c]));
+    const data = rows.map((r) => withGeo(rowToApi(r), coordById.get(r.id)));
+    return paginated(data, total, p);
   });
 
   app.post('/locations', async (req, reply) => {
@@ -156,9 +191,7 @@ export async function locationRoutes(app: FastifyInstance): Promise<void> {
     const coord = coords[0];
 
     return {
-      ...rowToApi(location),
-      lon: coord?.lon ?? null,
-      lat: coord?.lat ?? null,
+      ...withGeo(rowToApi(location), coord),
       parent: parent ? { id: parent.id, name: parent.name } : null,
       children: rowsToApi(relations.children),
       effective_logistics: effective.effective_logistics,

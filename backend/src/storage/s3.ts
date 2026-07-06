@@ -22,6 +22,8 @@ export interface StorageService {
   isConfigured(): boolean;
   /** Presigned PUT URL bound to the given Content-Type. */
   presignPut(key: string, mime: string): Promise<string>;
+  /** Direct server-side upload (used for photos imported from web ingestion). */
+  putObject(key: string, body: Uint8Array, mime: string): Promise<void>;
   /** Presigned GET URL for display/download. */
   presignGet(key: string): Promise<string>;
   /** Deletes the object; callers treat failures as best-effort. */
@@ -53,6 +55,12 @@ export function createStorageService(): StorageService {
     async presignPut(key: string, mime: string) {
       const command = new PutObjectCommand({ Bucket: env.S3_BUCKET, Key: key, ContentType: mime });
       return getSignedUrl(getClient(), command, { expiresIn: PRESIGN_TTL_SECONDS });
+    },
+
+    async putObject(key: string, body: Uint8Array, mime: string) {
+      await getClient().send(
+        new PutObjectCommand({ Bucket: env.S3_BUCKET, Key: key, Body: body, ContentType: mime }),
+      );
     },
 
     async presignGet(key: string) {

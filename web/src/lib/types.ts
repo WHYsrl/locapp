@@ -131,6 +131,8 @@ export interface LocationBase {
   postal_code?: string | null;
   country?: string;
   lng?: number | null;
+  /** Alias di lng emesso dal backend (list/detail emettono lat, lon E lng). */
+  lon?: number | null;
   lat?: number | null;
   /** GeoJSON point as returned by some backends. */
   geom?: { type: "Point"; coordinates: [number, number] } | null;
@@ -364,6 +366,16 @@ export interface SearchResult {
 
 // ---- geocoding --------------------------------------------------------------
 
+/** Structured params for GET /api/v1/geocode (better hit rate than plain q). */
+export interface GeocodeParams {
+  q?: string;
+  name?: string;
+  address?: string;
+  city?: string;
+  postal_code?: string;
+  province?: string;
+}
+
 /** Candidate returned by GET /api/v1/geocode?q=… */
 export interface GeocodeCandidate {
   display_name: string;
@@ -398,6 +410,8 @@ export interface ExtractedDraft {
   }[];
   suppliers?: { company_name: string; category?: string; requirement?: string }[];
   price_items?: PriceListItem[];
+  /** Foto individuate sulla pagina sorgente; importabili via selected_media_urls. */
+  proposed_media?: { url: string }[];
   open_questions?: string[];
   field_sources?: Record<string, string>;
 }
@@ -456,9 +470,10 @@ export interface LocationFilters {
   root_only?: boolean;
 }
 
-/** Resolve [lng,lat] from either flat fields or GeoJSON geom. */
+/** Resolve [lng,lat] from either flat fields (lng or lon alias) or GeoJSON geom. */
 export function lngLatOf(loc: LocationBase): [number, number] | null {
-  if (typeof loc.lng === "number" && typeof loc.lat === "number") return [loc.lng, loc.lat];
+  const lng = typeof loc.lng === "number" ? loc.lng : typeof loc.lon === "number" ? loc.lon : null;
+  if (lng != null && typeof loc.lat === "number") return [lng, loc.lat];
   if (loc.geom?.coordinates) return loc.geom.coordinates;
   return null;
 }

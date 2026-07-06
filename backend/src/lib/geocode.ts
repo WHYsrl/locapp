@@ -13,6 +13,16 @@ export interface GeocodeCandidate {
 
 export type GeocodeFn = (query: string) => Promise<GeocodeCandidate[]>;
 
+/** Structured address parts used to build progressively looser geocoding queries. */
+export interface GeocodeParts {
+  name?: string | null;
+  address_line?: string | null;
+  city?: string | null;
+  province?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+}
+
 /** Builds a Google Maps search link for a coordinate pair. */
 export function googleMapsUrl(lat: number, lon: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
@@ -31,6 +41,70 @@ export function buildGeocodeQuery(parts: {
     .map((p) => (typeof p === 'string' ? p.trim() : ''))
     .filter(Boolean)
     .join(', ');
+}
+
+/**
+ * Builds the fallback query variants for structured geocoding, most precise
+ * first. Nominatim often returns nothing when the venue name is prepended to
+ * a street address, so the address-only variants come before the name ones:
+ *   (a) address_line + postal_code + city
+ *   (b) address_line + city
+ *   (c) name + city
+ *   (d) name + province (or city when no province)
+ * Variants missing a required part are skipped; duplicates are removed.
+ */
+export function buildGeocodeVariants(parts: GeocodeParts): string[] {
+  const t = (v: string | null | undefined): string => (typeof v === 'string' ? v.trim() : '');
+  const name = t(parts.name);
+  const address = t(parts.address_line);
+  const city = t(parts.city);
+  const province = t(parts.province);
+  const postalCode = t(parts.postal_code);
+
+  const variants: string[] = [];
+  const add = (pieces: string[], required = pieces) => {
+    if (required.some((p) => !p)) return;
+    const q = pieces.filter(Boolean).join(', ');
+    if (q && !variants.includes(q)) variants.push(q);
+  };
+  add([address, postalCode, city]);
+  add([address, city]);
+  add([name, city]);
+  add([name, province || city]);
+  return variants;
+}
+
+/**
+ * Tries the geocode variants in order and returns the candidates of the first
+ * variant that yields any result (deduped by coordinates). Results from
+ * different variants are never mixed. `geocode` is the query-based geocoder
+ * (injectable for tests and app deps).
+ */
+export async function geocodeBestWith(parts: GeocodeParts, geocode: GeocodeFn): Promise<GeocodeCandidate[]> {
+  for (const query of buildGeocodeVariants(parts)) {
+    const candidates = await geocode(query);
+    if (candidates.length > 0) {
+      const seen = new Set<string>();
+      return candidates.filter((c) => {
+        const key = `${c.lat},${c.lon}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+  }
+  return [];
+}
+
+/**
+ * Structured geocoding against OSM Nominatim with variant fallback (see
+ * buildGeocodeVariants). Never throws; resolves to [] when nothing matches.
+ */
+export async function geocodeBest(
+  parts: GeocodeParts,
+  fetchFn: typeof fetch = fetch,
+): Promise<GeocodeCandidate[]> {
+  return geocodeBestWith(parts, (q) => geocodeAddress(q, fetchFn));
 }
 
 /**

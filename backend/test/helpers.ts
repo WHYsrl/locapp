@@ -164,6 +164,7 @@ export const sampleDraft: ExtractedLocationDraft = {
   price_items: [{ voce: 'Affitto giornaliero', prezzo: 5000, unita: 'giorno', note: '' }],
   open_questions: ['Chiedere potenza massima disponibile'],
   field_sources: { 'locations.name': 'pagina 1' },
+  proposed_media: [],
 };
 
 export function makeAi(overrides: Partial<AiService> = {}): AiService {
@@ -179,6 +180,7 @@ export function makeAi(overrides: Partial<AiService> = {}): AiService {
 export function makeStorage(overrides: Partial<StorageService> = {}): StorageService {
   return {
     isConfigured: vi.fn(() => true),
+    putObject: vi.fn(async () => undefined),
     presignPut: vi.fn(async (key: string, mime: string) => `https://upload.example/${key}?sig=put&ct=${encodeURIComponent(mime)}`),
     presignGet: vi.fn(async (key: string) => `https://download.example/${key}?sig=get`),
     deleteObject: vi.fn(async () => undefined),
@@ -192,6 +194,7 @@ export interface TestContext {
   ai: AiService;
   storage: StorageService;
   geocode: GeocodeFn;
+  renderMapThumb: (lat: number, lon: number) => Promise<Buffer>;
   tokens: { admin: string; editor: string; viewer: string };
 }
 
@@ -201,6 +204,7 @@ export async function buildTestApp(
     ai?: Partial<AiService>;
     storage?: Partial<StorageService>;
     geocode?: GeocodeFn;
+    renderMapThumb?: (lat: number, lon: number) => Promise<Buffer>;
   } = {},
 ): Promise<TestContext> {
   const repos = makeRepos(overrides.repos);
@@ -208,14 +212,17 @@ export async function buildTestApp(
   const storage = makeStorage(overrides.storage);
   // Hermetic by default: tests never hit the real Nominatim service.
   const geocode = overrides.geocode ?? vi.fn(async () => []);
-  const deps: AppDeps = { repos, ai, storage, geocode, jwtSecret: TEST_SECRET };
+  // Hermetic by default: tests never fetch OSM tiles or run sharp.
+  const renderMapThumb =
+    overrides.renderMapThumb ?? vi.fn(async () => Buffer.from('fake-png'));
+  const deps: AppDeps = { repos, ai, storage, geocode, renderMapThumb, jwtSecret: TEST_SECRET };
   const app = await buildApp(deps);
   const tokens = {
     admin: signToken({ id: 'u-admin', email: 'admin@test.it', name: 'Admin', role: 'admin' }, TEST_SECRET),
     editor: signToken({ id: 'u-editor', email: 'editor@test.it', name: 'Editor', role: 'editor' }, TEST_SECRET),
     viewer: signToken({ id: 'u-viewer', email: 'viewer@test.it', name: 'Viewer', role: 'viewer' }, TEST_SECRET),
   };
-  return { app, repos, ai, storage, geocode, tokens };
+  return { app, repos, ai, storage, geocode, renderMapThumb, tokens };
 }
 
 export const auth = (token: string) => ({ authorization: `Bearer ${token}` });

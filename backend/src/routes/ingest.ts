@@ -4,6 +4,7 @@ import { badRequest, notFound, notImplemented } from '../lib/errors.js';
 import { rowToApi } from '../lib/apiMappers.js';
 import { processIngestionJob } from '../ingest/process.js';
 import { applyDraft, type AcceptMap } from '../ingest/apply.js';
+import { importSelectedPhotos } from '../ingest/photos.js';
 import { ExtractedLocationDraftSchema } from '../ai/extraction.js';
 
 const IngestBody = z.object({
@@ -16,10 +17,12 @@ const IngestBody = z.object({
 
 const ApplyBody = z.object({
   accept: z.record(z.string(), z.boolean()),
+  /** Photo URLs picked from the draft's proposed_media; imported into S3 as kind 'foto'. */
+  selected_media_urls: z.array(z.string()).optional(),
 });
 
 export async function ingestRoutes(app: FastifyInstance): Promise<void> {
-  const { repos, ai } = app.deps;
+  const { repos, ai, storage } = app.deps;
 
   app.post('/ingest', async (req, reply) => {
     const body = IngestBody.parse(req.body);
@@ -72,11 +75,25 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     const draft = ExtractedLocationDraftSchema.parse(job.extracted);
     const result = await applyDraft(repos, draft, body.accept as AcceptMap, job.locationId);
 
+    // Photo import is best-effort: failures/missing storage warn, never fail the apply.
+    const photos = await importSelectedPhotos(
+      repos,
+      storage,
+      result.locationId,
+      body.selected_media_urls ?? [],
+    );
+
     const updated = await repos.ingestion.update(jobId, {
       status: 'applied',
       locationId: result.locationId,
       appliedAt: new Date(),
     });
-    return { ...rowToApi(updated ?? job), location_id: result.locationId, applied_fields: result.applied };
+    return {
+      ...rowToApi(updated ?? job),
+      location_id: result.locationId,
+      applied_fields: result.applied,
+      imported_media: photos.imported,
+      warnings: photos.warnings,
+    };
   });
 }

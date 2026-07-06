@@ -41,7 +41,63 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
-export async function fetchUrlText(url: string): Promise<string> {
+/** Filename heuristics for chrome imagery we never want to propose as venue photos. */
+const SKIP_IMAGE_NAME = /icon|logo|sprite|favicon|placeholder|spinner|loading|avatar|badge|pixel|tracking|bullet|arrow/i;
+const SKIP_IMAGE_EXT = /\.(svg|gif|ico)(?:$|\?)/i;
+const MIN_IMAGE_DIMENSION = 200;
+
+/**
+ * Collects candidate venue photo URLs from a page: og:image metas plus <img>
+ * src attributes, absolutized against the page URL, deduped, with vector /
+ * animated / chrome images (svg, gif, icons, logos, sprites) and images
+ * declared smaller than 200px skipped. Capped at `cap` results.
+ */
+export function extractImageUrls(html: string, pageUrl: string, cap = 12): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (raw: string | null | undefined): void => {
+    if (!raw) return;
+    let abs: URL;
+    try {
+      abs = new URL(decodeEntities(raw.trim()), pageUrl);
+    } catch {
+      return;
+    }
+    if (abs.protocol !== 'http:' && abs.protocol !== 'https:') return;
+    const filename = abs.pathname.split('/').pop() ?? '';
+    if (SKIP_IMAGE_EXT.test(filename) || SKIP_IMAGE_NAME.test(filename)) return;
+    if (seen.has(abs.href)) return;
+    seen.add(abs.href);
+    urls.push(abs.href);
+  };
+
+  for (const meta of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = meta[0];
+    if (!/(?:property|name)\s*=\s*["']og:image(?::secure_url|:url)?["']/i.test(tag)) continue;
+    push(/content\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]);
+  }
+
+  for (const img of html.matchAll(/<img\b[^>]*>/gi)) {
+    const tag = img[0];
+    const width = /\bwidth\s*=\s*["']?(\d+)/i.exec(tag);
+    const height = /\bheight\s*=\s*["']?(\d+)/i.exec(tag);
+    if (width && Number.parseInt(width[1]!, 10) < MIN_IMAGE_DIMENSION) continue;
+    if (height && Number.parseInt(height[1]!, 10) < MIN_IMAGE_DIMENSION) continue;
+    push(/\bsrc\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]);
+  }
+
+  return urls.slice(0, cap);
+}
+
+export interface FetchedPage {
+  text: string;
+  /** Candidate venue photo URLs (empty for non-HTML sources). */
+  images: string[];
+}
+
+/** Fetches a URL and returns both readable text and candidate photo URLs. */
+export async function fetchUrlPage(url: string): Promise<FetchedPage> {
   const response = await fetch(url, {
     headers: { 'user-agent': 'VenueScout/1.0 (+https://venuescout.example)' },
     redirect: 'follow',
@@ -50,9 +106,16 @@ export async function fetchUrlText(url: string): Promise<string> {
   if (!response.ok) throw new Error(`Fetch failed with status ${response.status}`);
   const contentType = response.headers.get('content-type') ?? '';
   if (contentType.includes('application/pdf')) {
-    return pdfToText(Buffer.from(await response.arrayBuffer()));
+    return { text: await pdfToText(Buffer.from(await response.arrayBuffer())), images: [] };
   }
-  return htmlToText(await response.text());
+  const html = await response.text();
+  // Resolve relative image URLs against the final URL after redirects.
+  const baseUrl = response.url || url;
+  return { text: htmlToText(html), images: extractImageUrls(html, baseUrl) };
+}
+
+export async function fetchUrlText(url: string): Promise<string> {
+  return (await fetchUrlPage(url)).text;
 }
 
 export async function pdfToText(buffer: Buffer): Promise<string> {

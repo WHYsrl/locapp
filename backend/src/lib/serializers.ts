@@ -85,6 +85,30 @@ export function resolveEffective(location: EffectiveSource, parent: EffectiveSou
   };
 }
 
+export interface CoordinatePair {
+  lon: number | null;
+  lat: number | null;
+}
+
+/**
+ * Decorates a serialized location with its coordinates. Both `lon` and `lng`
+ * are emitted with the same value so clients can read either alias, and when
+ * the location has a geometry but no stored thumbnail, `thumbnail_url` falls
+ * back to the static map endpoint (public, no auth).
+ */
+export function withGeo(
+  apiRow: Record<string, unknown>,
+  coord?: CoordinatePair | null,
+): Record<string, unknown> {
+  const lon = coord?.lon ?? null;
+  const lat = coord?.lat ?? null;
+  const out: Record<string, unknown> = { ...apiRow, lon, lng: lon, lat };
+  if (lon != null && lat != null && out['thumbnail_url'] == null) {
+    out['thumbnail_url'] = `/api/v1/locations/${String(apiRow['id'])}/map-thumb.png`;
+  }
+  return out;
+}
+
 export interface UsageRow {
   projectId: string;
   projectName: string;

@@ -90,6 +90,10 @@ export default function IngestPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [accept, setAccept] = useState<Record<string, boolean>>({});
   const [appliedLocationId, setAppliedLocationId] = useState<string | null>(null);
+  // Foto proposte dal sito: selezione per URL + URL con immagine irraggiungibile.
+  const [mediaSel, setMediaSel] = useState<Record<string, boolean>>({});
+  const [brokenMedia, setBrokenMedia] = useState<Record<string, boolean>>({});
+  const [applyWarnings, setApplyWarnings] = useState<string[]>([]);
 
   const { data: locations } = useQuery({ queryKey: ["locations", "all"], queryFn: () => api.listLocations() });
 
@@ -105,6 +109,9 @@ export default function IngestPage() {
       setJobId(job.id);
       setAccept({});
       setAppliedLocationId(null);
+      setMediaSel({});
+      setBrokenMedia({});
+      setApplyWarnings([]);
     },
   });
 
@@ -123,6 +130,13 @@ export default function IngestPage() {
 
   const parsed = useMemo(() => (draft ? draftRows(draft) : null), [draft]);
 
+  const proposedMedia = useMemo(
+    () => (draft?.proposed_media ?? []).filter((m) => typeof m.url === "string" && m.url.trim() !== ""),
+    [draft]
+  );
+  const visibleMedia = proposedMedia.filter((m) => !brokenMedia[m.url]);
+  const selectedMediaUrls = visibleMedia.filter((m) => mediaSel[m.url]).map((m) => m.url);
+
   // default: everything accepted
   useEffect(() => {
     if (!parsed) return;
@@ -135,10 +149,23 @@ export default function IngestPage() {
     });
   }, [parsed]);
 
+  // default: first 6 proposed photos selected
+  useEffect(() => {
+    if (proposedMedia.length === 0) return;
+    setMediaSel((prev) => {
+      if (Object.keys(prev).length > 0) return prev;
+      const next: Record<string, boolean> = {};
+      proposedMedia.forEach((m, i) => (next[m.url] = i < 6));
+      return next;
+    });
+  }, [proposedMedia]);
+
   const applyJob = useMutation({
-    mutationFn: () => api.applyIngestJob(jobId!, accept),
+    mutationFn: () =>
+      api.applyIngestJob(jobId!, accept, proposedMedia.length > 0 ? selectedMediaUrls : undefined),
     onSuccess: (res) => {
       setAppliedLocationId(res.location_id);
+      setApplyWarnings(res.warnings ?? []);
       qc.invalidateQueries({ queryKey: ["locations"] });
       qc.invalidateQueries({ queryKey: ["ingest-job", jobId] });
     },
@@ -154,6 +181,9 @@ export default function IngestPage() {
     setJobId(null);
     setAccept({});
     setAppliedLocationId(null);
+    setMediaSel({});
+    setBrokenMedia({});
+    setApplyWarnings([]);
     createJob.reset();
     applyJob.reset();
   };
@@ -351,6 +381,74 @@ export default function IngestPage() {
             </Card>
           ))}
 
+          {proposedMedia.length > 0 && (
+            <Card
+              title={`Foto proposte dal sito (${visibleMedia.length})`}
+              action={
+                <div className="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    className="font-semibold text-berry hover:underline"
+                    onClick={() =>
+                      setMediaSel(Object.fromEntries(visibleMedia.map((m) => [m.url, true])))
+                    }
+                  >
+                    Seleziona tutte
+                  </button>
+                  <span className="text-ink/25">·</span>
+                  <button
+                    type="button"
+                    className="font-semibold text-berry hover:underline"
+                    onClick={() => setMediaSel(Object.fromEntries(visibleMedia.map((m) => [m.url, false])))}
+                  >
+                    Nessuna
+                  </button>
+                </div>
+              }
+            >
+              <p className="mb-3 text-sm text-ink/60">
+                Anteprime caricate dal sito originale: le foto selezionate verranno importate nella scheda
+                come media al momento dell&apos;applicazione.
+              </p>
+              {visibleMedia.length === 0 ? (
+                <p className="text-sm text-ink/40">Nessuna anteprima raggiungibile dal sito di origine.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                  {visibleMedia.map((m) => {
+                    const selected = !!mediaSel[m.url];
+                    return (
+                      <label
+                        key={m.url}
+                        className={`group relative block aspect-square cursor-pointer overflow-hidden rounded-lg border transition ${
+                          selected ? "border-berry ring-2 ring-berry/25" : "border-berry/10"
+                        }`}
+                        title={m.url}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={m.url}
+                          alt="Foto proposta dal sito"
+                          loading="lazy"
+                          onError={() => setBrokenMedia((b) => ({ ...b, [m.url]: true }))}
+                          className="h-full w-full bg-tint object-cover"
+                        />
+                        {!selected && <div className="pointer-events-none absolute inset-0 bg-white/60" />}
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(e) => setMediaSel((s) => ({ ...s, [m.url]: e.target.checked }))}
+                          className="absolute left-2 top-2 h-4 w-4 rounded accent-[#6d2e46] shadow"
+                          aria-label="Importa questa foto"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="mt-3 text-xs text-ink/50">{selectedMediaUrls.length} foto selezionate per l&apos;import</p>
+            </Card>
+          )}
+
           {(draft.open_questions ?? []).length > 0 && (
             <Card title="Domande aperte">
               <ul className="list-inside list-disc space-y-1 text-sm text-yellow-800">
@@ -368,6 +466,7 @@ export default function IngestPage() {
             </button>
             <span className="text-xs text-ink/50">
               {Object.values(accept).filter(Boolean).length} elementi selezionati
+              {proposedMedia.length > 0 ? ` · ${selectedMediaUrls.length} foto` : ""}
             </span>
           </div>
         </div>
@@ -375,6 +474,18 @@ export default function IngestPage() {
 
       {appliedLocationId && (
         <Card>
+          {applyWarnings.length > 0 && (
+            <div className="mb-4 space-y-2">
+              {applyWarnings.map((w, i) => (
+                <div
+                  key={i}
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900"
+                >
+                  {w}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="py-6 text-center">
             <p className="text-lg font-bold text-emerald-700">Bozza applicata ✓</p>
             <p className="mt-1 text-sm text-ink/60">I campi selezionati sono stati scritti sulla scheda location.</p>

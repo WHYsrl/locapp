@@ -52,6 +52,12 @@ export const ExtractedLocationDraftSchema = z.object({
     .default([]),
   open_questions: z.array(z.string()).default([]),
   field_sources: z.record(z.string(), z.string()).default({}),
+  /**
+   * Candidate photos scraped from the source page (url ingestion only).
+   * Added by the pipeline after extraction — the Claude tool schema does not
+   * produce it. The user picks which to import via `selected_media_urls` on apply.
+   */
+  proposed_media: z.array(z.object({ url: z.string() })).default([]),
 });
 
 export type ExtractedLocationDraft = z.infer<typeof ExtractedLocationDraftSchema>;

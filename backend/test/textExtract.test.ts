@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
-import { htmlToText, pptxToText } from '../src/ingest/textExtract.js';
+import { extractImageUrls, htmlToText, pptxToText } from '../src/ingest/textExtract.js';
 
 describe('htmlToText', () => {
   it('strips scripts, styles and tags keeping readable text', () => {
@@ -14,6 +14,52 @@ describe('htmlToText', () => {
     expect(text).not.toContain('alert(1)');
     expect(text).not.toContain('color:red');
     expect(text).not.toContain('<');
+  });
+});
+
+describe('extractImageUrls', () => {
+  const PAGE_URL = 'https://venue.example/location/index.html';
+
+  it('collects og:image and img src, absolutized against the page URL, og first', () => {
+    const html = `<html><head>
+      <meta property="og:image" content="https://cdn.example.com/hero.jpg"/>
+      <meta name="og:image" content="/img/og-cover.jpg">
+      </head><body>
+      <img src="/img/sala.jpg">
+      <img src="gallery/giardino.jpeg" width="800" height="600">
+      </body></html>`;
+    expect(extractImageUrls(html, PAGE_URL)).toEqual([
+      'https://cdn.example.com/hero.jpg',
+      'https://venue.example/img/og-cover.jpg',
+      'https://venue.example/img/sala.jpg',
+      'https://venue.example/location/gallery/giardino.jpeg',
+    ]);
+  });
+
+  it('skips svg/gif/icons/logos/sprites, small images, duplicates and non-http URLs', () => {
+    const html = `<body>
+      <img src="/img/sala.jpg">
+      <img src="/img/sala.jpg">
+      <img src="/img/logo.png">
+      <img src="/icons/pin-icon.jpg">
+      <img src="/assets/sprite.png">
+      <img src="/img/vettoriale.svg">
+      <img src="/img/animazione.gif">
+      <img src="/img/thumb.jpg" width="120">
+      <img src="/img/thumb2.jpg" height='80'>
+      <img src="/img/grande.jpg" width="1200" height="900">
+      <img src="data:image/png;base64,AAAA">
+      <img alt="senza src">
+      </body>`;
+    expect(extractImageUrls(html, PAGE_URL)).toEqual([
+      'https://venue.example/img/sala.jpg',
+      'https://venue.example/img/grande.jpg',
+    ]);
+  });
+
+  it('caps the number of candidates at 12', () => {
+    const imgs = Array.from({ length: 20 }, (_, i) => `<img src="/foto-${i}.jpg">`).join('');
+    expect(extractImageUrls(`<body>${imgs}</body>`, PAGE_URL)).toHaveLength(12);
   });
 });
 
