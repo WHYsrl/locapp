@@ -50,7 +50,11 @@ const WRITE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: env.NODE_ENV !== 'test' });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
   app.decorate('deps', deps);
   app.decorateRequest('user', null);
 
