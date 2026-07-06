@@ -300,6 +300,10 @@ export function createLocationsRepo(db: Db) {
       const rows = await db.insert(media).values(input).returning();
       return rows[0]!;
     },
+    async updateMedia(id: string, patch: Partial<typeof media.$inferInsert>) {
+      const rows = await db.update(media).set(patch).where(eq(media.id, id)).returning();
+      return rows[0] ?? null;
+    },
     async deleteMedia(id: string) {
       const rows = await db.delete(media).where(eq(media.id, id)).returning({ id: media.id });
       return rows.length > 0;

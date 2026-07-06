@@ -51,6 +51,7 @@ export function makeRepos(overrides: SectionOverrides = {}): Repos {
       listMedia: vi.fn(async () => []),
       getMedia: vi.fn(async () => null),
       createMedia: vi.fn(async (input: Record<string, unknown>) => ({ id: 'media-1', ...input })),
+      updateMedia: vi.fn(async () => null),
       deleteMedia: vi.fn(async () => true),
       listPriceLists: vi.fn(async () => []),
       createPriceList: vi.fn(async (input: Record<string, unknown>) => ({ id: 'pl-1', ...input })),
@@ -175,13 +176,13 @@ export function makeAi(overrides: Partial<AiService> = {}): AiService {
   };
 }
 
-export function makeStorage(): StorageService {
+export function makeStorage(overrides: Partial<StorageService> = {}): StorageService {
   return {
-    presignUpload: vi.fn(async (key: string) => ({
-      upload_url: `https://upload.example/${key}?sig=abc`,
-      public_url: `https://cdn.example/${key}`,
-      key,
-    })),
+    isConfigured: vi.fn(() => true),
+    presignPut: vi.fn(async (key: string, mime: string) => `https://upload.example/${key}?sig=put&ct=${encodeURIComponent(mime)}`),
+    presignGet: vi.fn(async (key: string) => `https://download.example/${key}?sig=get`),
+    deleteObject: vi.fn(async () => undefined),
+    ...overrides,
   };
 }
 
@@ -195,11 +196,16 @@ export interface TestContext {
 }
 
 export async function buildTestApp(
-  overrides: { repos?: SectionOverrides; ai?: Partial<AiService>; geocode?: GeocodeFn } = {},
+  overrides: {
+    repos?: SectionOverrides;
+    ai?: Partial<AiService>;
+    storage?: Partial<StorageService>;
+    geocode?: GeocodeFn;
+  } = {},
 ): Promise<TestContext> {
   const repos = makeRepos(overrides.repos);
   const ai = makeAi(overrides.ai);
-  const storage = makeStorage();
+  const storage = makeStorage(overrides.storage);
   // Hermetic by default: tests never hit the real Nominatim service.
   const geocode = overrides.geocode ?? vi.fn(async () => []);
   const deps: AppDeps = { repos, ai, storage, geocode, jwtSecret: TEST_SECRET };

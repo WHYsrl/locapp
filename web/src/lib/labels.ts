@@ -3,6 +3,8 @@ import type {
   Configuration,
   EffectiveStatus,
   EventLocationStatus,
+  MediaCategory,
+  MediaKind,
   ProjectStatus,
   QuoteStatus,
 } from "./types";
@@ -112,6 +114,34 @@ export const PROJECT_STATUS_CLASSES: Record<ProjectStatus, string> = {
   attivo: "bg-emerald-100 text-emerald-800 border-emerald-200",
   chiuso: "bg-gray-100 text-gray-700 border-gray-200",
   archiviato: "bg-gray-100 text-gray-500 border-gray-200",
+};
+
+export const MEDIA_KINDS: MediaKind[] = ["foto", "video", "planimetria", "documento", "listino"];
+
+export const MEDIA_KIND_LABELS: Record<MediaKind, string> = {
+  foto: "Foto",
+  video: "Video",
+  planimetria: "Planimetria",
+  documento: "Documento",
+  listino: "Listino",
+};
+
+export const MEDIA_KIND_ICONS: Record<MediaKind, string> = {
+  foto: "🖼",
+  video: "🎬",
+  planimetria: "📐",
+  documento: "📄",
+  listino: "🧾",
+};
+
+export const MEDIA_CATEGORIES: MediaCategory[] = ["esterni", "interni", "sala", "servizi", "setup"];
+
+export const MEDIA_CATEGORY_LABELS: Record<MediaCategory, string> = {
+  esterni: "Esterni",
+  interni: "Interni",
+  sala: "Sala",
+  servizi: "Servizi",
+  setup: "Setup",
 };
 
 export const SMART_TAGS = [

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { v7 as uuidv7 } from 'uuid';
 import { notFound } from '../lib/errors.js';
+import { storageNotConfigured } from '../storage/s3.js';
 import { rowToApi, rowsToApi } from '../lib/apiMappers.js';
 
 const IdParams = z.object({ id: z.string() });
@@ -48,11 +49,20 @@ const SupplierBody = z.object({
   rating: z.number().nullish(),
 });
 
+const MediaKindEnum = z.enum(['foto', 'video', 'planimetria', 'documento', 'listino']);
+const MediaCategoryEnum = z.enum(['esterni', 'interni', 'sala', 'servizi', 'setup']);
+
 const MediaBody = z.object({
-  kind: z.enum(['foto', 'video', 'planimetria', 'documento', 'listino']),
-  category: z.string().nullish(),
+  kind: MediaKindEnum,
+  category: MediaCategoryEnum.nullish(),
   filename: z.string().min(1),
   mime: z.string().min(1),
+  space_id: z.string().nullish(),
+});
+
+const MediaPatchBody = z.object({
+  kind: MediaKindEnum.optional(),
+  category: MediaCategoryEnum.nullish(),
   space_id: z.string().nullish(),
 });
 
@@ -224,28 +234,60 @@ export async function locationSubRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/locations/:id/media', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
+    // Storage config is checked at request time (not boot): 503 with an actionable message.
+    if (!storage.isConfigured()) throw storageNotConfigured();
     await mustExist(id);
     const body = MediaBody.parse(req.body);
     const safeName = body.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
     const key = `locations/${id}/${uuidv7()}-${safeName}`;
-    const upload = await storage.presignUpload(key, body.mime);
+    const uploadUrl = await storage.presignPut(key, body.mime);
+    // The media row stores the S3 key in `url`; display URLs come from GET /media/:id/url.
     const row = await repos.locations.createMedia({
       locationId: id,
       spaceId: body.space_id ?? null,
       kind: body.kind,
       category: body.category ?? null,
-      url: upload.public_url,
+      url: key,
       filename: body.filename,
       mime: body.mime,
     });
     reply.status(201);
-    return { media: rowToApi(row), upload };
+    return { data: { media: rowToApi(row), upload_url: uploadUrl } };
+  });
+
+  app.get('/media/:id/url', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    if (!storage.isConfigured()) throw storageNotConfigured();
+    const row = await repos.locations.getMedia(id);
+    if (!row) throw notFound('Media');
+    return { data: { url: await storage.presignGet(row.url) } };
+  });
+
+  app.patch('/media/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const body = MediaPatchBody.parse(req.body);
+    const patch: Record<string, unknown> = {};
+    if (body.kind !== undefined) patch['kind'] = body.kind;
+    if (body.category !== undefined) patch['category'] = body.category;
+    if (body.space_id !== undefined) patch['spaceId'] = body.space_id;
+    const row = await repos.locations.updateMedia(id, patch as never);
+    if (!row) throw notFound('Media');
+    return { data: rowToApi(row) };
   });
 
   app.delete('/media/:id', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const ok = await repos.locations.deleteMedia(id);
-    if (!ok) throw notFound('Media');
+    const row = await repos.locations.getMedia(id);
+    if (!row) throw notFound('Media');
+    await repos.locations.deleteMedia(id);
+    // Best-effort S3 cleanup: the DB row is gone even if the object delete fails.
+    if (storage.isConfigured()) {
+      try {
+        await storage.deleteObject(row.url);
+      } catch (err) {
+        req.log.warn({ err, key: row.url }, 'best-effort S3 delete failed');
+      }
+    }
     reply.status(204);
   });
 

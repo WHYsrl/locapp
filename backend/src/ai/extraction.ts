@@ -69,7 +69,7 @@ export const EXTRACTION_TOOL: Anthropic.Tool = {
       confidence: { type: 'number', minimum: 0, maximum: 1 },
       location: {
         type: 'object',
-        description: 'Any locations column: name, summary, address_line, city, province, postal_code, country, google_maps_url, visit_status, logistics, setup, party, technical, accessibility_rating, accessibility_notes, availability_rules, smart_tags, impressions.',
+        description: 'Any locations column: name, summary, address_line, city, province, postal_code, country, phone, email, website, google_maps_url, visit_status, logistics, setup, party, technical, accessibility_rating, accessibility_notes, availability_rules, smart_tags, impressions. phone/email/website are the venue\'s own direct contact data (switchboard, info email, official site) — NOT those of individual people, which belong in contacts[].',
         additionalProperties: true,
       },
       spaces: {
@@ -144,6 +144,8 @@ const EXTRACTION_SYSTEM = `You are an information extraction engine for an Itali
 Extract ONLY facts explicitly stated in the source material. Never invent or infer missing values.
 If a value is uncertain or ambiguous, leave the field out and add an entry to open_questions (in Italian).
 All extracted textual content must be in Italian. Map facts onto the venue schema fields.
+Put the venue's own direct contact data in location.phone, location.email and location.website;
+personal contact details of named people go into the contacts array instead.
 Record where each notable field came from in field_sources (e.g. "locations.technical.max_kw": "pagina 3").
 Always answer by calling the record_location_draft tool.`;
 

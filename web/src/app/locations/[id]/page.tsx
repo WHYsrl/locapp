@@ -11,6 +11,7 @@ import CollapsibleSection from "@/components/CollapsibleSection";
 import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
 import AddSupplierDialog from "@/components/AddSupplierDialog";
 import AddContactDialog from "@/components/AddContactDialog";
+import MediaSection from "@/components/MediaSection";
 import { Badge, Card, EmptyState, Spinner, Stars, btnPrimary, btnSecondary } from "@/components/ui";
 import {
   CONFIGURATIONS,
@@ -90,6 +91,16 @@ export default function LocationDetailPage() {
   const ll = lngLatOf(loc);
   const usedConfigs = CONFIGURATIONS.filter((c) => loc.spaces.some((s) => s.capacities[c] != null));
 
+  // Contact fields: prefer own values, fall back to effective_* (inherited
+  // from the parent) when the API provides them.
+  const phone = loc.phone ?? loc.effective_phone ?? null;
+  const email = loc.email ?? loc.effective_email ?? null;
+  const website = loc.website ?? loc.effective_website ?? null;
+  const phoneInherited = !loc.phone && loc.effective_phone != null;
+  const emailInherited = !loc.email && loc.effective_email != null;
+  const websiteInherited = !loc.website && loc.effective_website != null;
+  const inheritedBadge = <Badge className="bg-gold/15 text-yellow-800 border-gold/30">ereditato</Badge>;
+
   return (
     <div>
       {/* breadcrumb */}
@@ -123,6 +134,42 @@ export default function LocationDetailPage() {
                 .join(", ") || "Indirizzo non impostato"}
               {loc.parent && <span className="ml-2 text-xs text-ink/40">· interna a {loc.parent.name}</span>}
             </p>
+            {(phone || email || website) && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink/70">
+                {phone && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-ink/40">Tel</span>
+                    <a href={`tel:${phone.replace(/\s+/g, "")}`} className="font-medium text-berry hover:underline">
+                      {phone}
+                    </a>
+                    {phoneInherited && inheritedBadge}
+                  </span>
+                )}
+                {email && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-ink/40">Email</span>
+                    <a href={`mailto:${email}`} className="font-medium text-berry hover:underline">
+                      {email}
+                    </a>
+                    {emailInherited && inheritedBadge}
+                  </span>
+                )}
+                {website && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-ink/40">Web</span>
+                    <a
+                      href={normalizeUrl(website)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-berry hover:underline"
+                    >
+                      {hostnameOf(website)} ↗
+                    </a>
+                    {websiteInherited && inheritedBadge}
+                  </span>
+                )}
+              </div>
+            )}
             {!ll && (loc.address_line || loc.city) && (
               <div className="mt-2">
                 <GeocodeSuggest
@@ -452,6 +499,9 @@ export default function LocationDetailPage() {
             )}
           </CollapsibleSection>
 
+          {/* media & floor plans */}
+          <MediaSection locationId={id} media={loc.media} />
+
           {/* usage */}
           <CollapsibleSection storageKey="locdetail:utilizzo" title="Utilizzo in progetti ed eventi">
             {(usage ?? []).length === 0 ? (
@@ -609,27 +659,6 @@ export default function LocationDetailPage() {
             )}
           </CollapsibleSection>
 
-          <CollapsibleSection storageKey="locdetail:media" title="Media">
-            {loc.media.length === 0 ? (
-              <p className="text-sm text-ink/40">Nessun media</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {loc.media.map((m) => (
-                  <div
-                    key={m.id}
-                    className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-berry/10 bg-tint/60 p-2 text-center"
-                  >
-                    <span className="text-2xl">
-                      {m.kind === "foto" ? "🖼" : m.kind === "video" ? "🎬" : m.kind === "planimetria" ? "📐" : m.kind === "listino" ? "🧾" : "📄"}
-                    </span>
-                    <span className="line-clamp-2 text-[11px] leading-tight text-ink/60">{m.filename ?? m.kind}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-ink/35">{m.category ?? m.kind}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CollapsibleSection>
-
           <CollapsibleSection storageKey="locdetail:note" title="Note di progetto">
             {(loc.project_notes ?? []).length === 0 ? (
               <p className="text-sm text-ink/40">Nessuna nota specifica di progetto</p>
@@ -660,6 +689,20 @@ export default function LocationDetailPage() {
       <AddContactDialog locationId={id} open={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
+}
+
+/** Prepend https:// when the stored website has no scheme. */
+function normalizeUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url.replace(/^\/\//, "")}`;
+}
+
+/** Display-friendly hostname (falls back to the raw value if unparsable). */
+function hostnameOf(url: string): string {
+  try {
+    return new URL(normalizeUrl(url)).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 function Info({ label, value, full = false }: { label: string; value?: string | null; full?: boolean }) {

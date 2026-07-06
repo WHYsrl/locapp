@@ -45,6 +45,35 @@ describe('resolveEffective', () => {
     expect(result.inherited_fields).not.toContain('address_line');
   });
 
+  it('inherits phone/email/website from parent when child values are null', () => {
+    const contactParent = { ...parent, phone: '+39 02 123456', email: 'info@parent.it', website: 'https://parent.it' };
+    const child = { logistics: null, addressLine: null, city: null, province: null, postalCode: null, googleMapsUrl: null, phone: null, email: null, website: null };
+    const result = resolveEffective(child, contactParent);
+    expect(result.effective_contact).toEqual({
+      phone: '+39 02 123456',
+      email: 'info@parent.it',
+      website: 'https://parent.it',
+    });
+    expect(result.inherited_fields).toEqual(expect.arrayContaining(['phone', 'email', 'website']));
+  });
+
+  it('child contact values win over the parent and are not marked inherited', () => {
+    const contactParent = { ...parent, phone: '+39 02 123456', email: 'info@parent.it', website: 'https://parent.it' };
+    const child = { logistics: null, addressLine: null, city: null, province: null, postalCode: null, googleMapsUrl: null, phone: '+39 02 999999', email: null, website: null };
+    const result = resolveEffective(child, contactParent);
+    expect(result.effective_contact.phone).toBe('+39 02 999999');
+    expect(result.effective_contact.email).toBe('info@parent.it');
+    expect(result.inherited_fields).not.toContain('phone');
+    expect(result.inherited_fields).toContain('email');
+  });
+
+  it('returns null contact fields for a root location without contact data', () => {
+    const root = { logistics: null, addressLine: null, city: null, province: null, postalCode: null, googleMapsUrl: null };
+    const result = resolveEffective(root, null);
+    expect(result.effective_contact).toEqual({ phone: null, email: null, website: null });
+    expect(result.inherited_fields).toEqual([]);
+  });
+
   it('returns own values untouched for a root location', () => {
     const root = { logistics: { auto: 'ok' }, addressLine: 'Piazza Grande 2', city: 'Bologna', province: null, postalCode: null, googleMapsUrl: null };
     const result = resolveEffective(root, null);

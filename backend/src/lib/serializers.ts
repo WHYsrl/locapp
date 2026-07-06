@@ -7,6 +7,9 @@ export const INHERITED_FIELDS = [
   'province',
   'postalCode',
   'googleMapsUrl',
+  'phone',
+  'email',
+  'website',
 ] as const;
 
 export interface EffectiveSource {
@@ -16,6 +19,9 @@ export interface EffectiveSource {
   province?: string | null;
   postalCode?: string | null;
   googleMapsUrl?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
 }
 
 export interface EffectiveResult {
@@ -26,6 +32,11 @@ export interface EffectiveResult {
     province: string | null;
     postal_code: string | null;
     google_maps_url: string | null;
+  };
+  effective_contact: {
+    phone: string | null;
+    email: string | null;
+    website: string | null;
   };
   inherited_fields: string[];
 }
@@ -64,6 +75,11 @@ export function resolveEffective(location: EffectiveSource, parent: EffectiveSou
       province: pick(location.province, parent?.province, 'province'),
       postal_code: pick(location.postalCode, parent?.postalCode, 'postal_code'),
       google_maps_url: pick(location.googleMapsUrl, parent?.googleMapsUrl, 'google_maps_url'),
+    },
+    effective_contact: {
+      phone: pick(location.phone, parent?.phone, 'phone'),
+      email: pick(location.email, parent?.email, 'email'),
+      website: pick(location.website, parent?.website, 'website'),
     },
     inherited_fields: inherited,
   };

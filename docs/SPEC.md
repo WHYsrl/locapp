@@ -18,7 +18,7 @@ Source of truth for backend, web and iOS. All three components MUST follow this 
 
 1. **Project → Events (1:N).** A project (e.g. "Convention ACME 2026") contains multiple events (2 lunches, 3 dinners, 1 conference, 1 party...). Each event has its own location shortlist.
 2. **Base vs specific info.** Location tables hold BASE info (true regardless of project). Event/project-specific info (client feedback, negotiated prices, availability for those dates, notes) lives in `event_locations` and `location_project_notes` — never written into the base card.
-3. **Nested locations.** `locations.parent_location_id` — a hotel contains restaurants/meeting rooms. Children inherit address/logistics by default (API returns `effective_*` fields resolved from parent when null).
+3. **Nested locations.** `locations.parent_location_id` — a hotel contains restaurants/meeting rooms. Children inherit address/logistics/contact data (phone, email, website) by default (API returns `effective_*` fields resolved from parent when null).
 4. **Location status.** `visit_status`: `da_visitare` | `visitata` (base info). `proposta`/`utilizzata` are DERIVED from `event_locations` (status `proposta`+ = proposed; `utilizzata` = used) — API exposes `GET /locations/:id/usage` listing projects/events + dates.
 5. **Ingestion sources.** AI extraction accepts: audio (transcript), free text, photos, PDF, PPTX, DOCX, **web URLs** (server fetches and parses). Every extraction produces a reviewable draft (`ingestion_jobs`), never writes directly. When the draft has an address (or name + city) but no coordinates, the pipeline geocodes it (OSM Nominatim, best-effort) and proposes `location.geom {lat,lng}` + `location.google_maps_url` in the draft, sourced as `field_sources["locations.geom"]` — the user confirms via the per-field accept/reject review; coordinates are never written silently.
 6. **Maps.** Any project or event exposes `GET .../map` → GeoJSON FeatureCollection of its selected locations (+ optional POIs) for rendering/export.
@@ -35,6 +35,7 @@ company_contacts(company_id fk, contact_id fk, role text, primary key(company_id
 locations(id uuid pk, parent_location_id uuid fk locations null,
   name text not null, slug unique, summary text,
   address_line, city, province, postal_code, country default 'IT',
+  phone, email, website,     -- direct venue contact data (distinct from location_contacts people)
   geom geometry(Point,4326), google_maps_url, thumbnail_url,
   visit_status text default 'da_visitare' check in ('da_visitare','visitata'),
   logistics jsonb,          -- {auto,bus/pullman,ztl:{present,hours,permits},stop_difficulty,private_parking:{spots},nearby_parking:[{name,distance_m}],notes}
@@ -121,10 +122,17 @@ Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[
 ### Locations
 - `GET /locations` — filters: `q, tags, city, visit_status, min_capacity, configuration, accessibility_min, parent_id, root_only=true`
 - `POST /locations` / `GET|PATCH|DELETE /locations/:id`
-  - GET returns: base card + `children[]`, `effective_logistics` (inherited), `spaces[]+capacities`, `contacts[]`, `suppliers[]`, `media[]`, `price_lists[]`, `usage_summary`
+  - GET returns: base card + `children[]`, `effective_logistics`/`effective_address`/`effective_contact` (inherited), `spaces[]+capacities`, `contacts[]`, `suppliers[]`, `media[]` (with kind/category/filename/mime), `price_lists[]`, `usage_summary`
 - `GET /locations/:id/usage` → `[{project,event,status,dates}]` (proposta/utilizzata per requirement §2.4)
 - `GET /locations/:id/history` → timeline (site visits, events, quotes, feedback)
-- Sub-resources CRUD: `/locations/:id/spaces`, `/spaces/:id/capacities`, `/locations/:id/contacts`, `/locations/:id/suppliers`, `/locations/:id/media` (returns presigned upload URL), `/locations/:id/price-lists`, `/locations/:id/notes` (project notes)
+- Sub-resources CRUD: `/locations/:id/spaces`, `/spaces/:id/capacities`, `/locations/:id/contacts`, `/locations/:id/suppliers`, `/locations/:id/media` (see Media), `/locations/:id/price-lists`, `/locations/:id/notes` (project notes)
+
+### Media (upload + catalog)
+- `POST /locations/:id/media {kind: foto|video|planimetria|documento|listino, category?: esterni|interni|sala|servizi|setup, space_id?, filename, mime}` → 201 `{data:{media, upload_url}}` — `upload_url` is an S3 presigned PUT (1h, Content-Type bound); the media row stores the S3 key in `url`
+- `GET /media/:id/url` → `{data:{url}}` — presigned GET (1h) for display/download
+- `PATCH /media/:id {kind?, category?, space_id?}` → `{data: media}` (recatalog)
+- `DELETE /media/:id` → 204 — removes the DB row + best-effort S3 object delete
+- If S3 env is not configured, upload/url routes return 503 `{error:{code:'storage_not_configured', message:'Storage media non configurato: impostare le variabili S3_* su Render'}}` (checked at request time, not boot)
 
 ### Ingestion (AI)
 - `POST /ingest` `{location_id?, source_type, url?, text?, media_id?}` → creates job, async processing

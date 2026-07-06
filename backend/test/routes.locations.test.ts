@@ -195,8 +195,96 @@ describe('location routes', () => {
     });
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.upload.upload_url).toContain('https://upload.example/');
-    expect(body.media.url).toContain('https://cdn.example/locations/loc-parent/');
-    expect(body.media.kind).toBe('foto');
+    expect(body.data.upload_url).toContain('https://upload.example/locations/loc-parent/');
+    // The media row stores the raw S3 key, not a public URL.
+    expect(body.data.media.url).toMatch(/^locations\/loc-parent\/.+-facciata\.jpg$/);
+    expect(body.data.media.kind).toBe('foto');
+    expect(body.data.media.category).toBe('esterni');
+  });
+
+  it('POST /locations accepts direct contact fields and returns them serialized', async () => {
+    const ctx = await buildTestApp();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/locations',
+      headers: auth(ctx.tokens.editor),
+      payload: {
+        name: 'Palazzo Nuovo',
+        phone: '+39 06 1234567',
+        email: 'info@palazzonuovo.it',
+        website: 'https://palazzonuovo.it',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.phone).toBe('+39 06 1234567');
+    expect(body.email).toBe('info@palazzonuovo.it');
+    expect(body.website).toBe('https://palazzonuovo.it');
+  });
+
+  it('PATCH /locations/:id maps phone/email/website onto the update patch', async () => {
+    const patches: Array<Record<string, unknown>> = [];
+    const ctx = await buildTestApp({
+      repos: {
+        locations: {
+          update: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+            patches.push(patch);
+            return { ...parentLocation, id, ...patch };
+          }),
+        },
+      },
+    });
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/locations/loc-parent',
+      headers: auth(ctx.tokens.editor),
+      payload: { phone: '02 8888888', email: null, website: 'https://aurelia.example' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(patches[0]).toEqual({ phone: '02 8888888', email: null, website: 'https://aurelia.example' });
+  });
+
+  it('GET /locations list and detail include phone/email/website; children inherit them via effective_contact', async () => {
+    const parentWithContact = {
+      ...parentLocation,
+      phone: '+39 06 555555',
+      email: 'info@aurelia.it',
+      website: 'https://aurelia.it',
+    };
+    const childNoContact = { ...baseLocation, phone: null, email: null, website: null };
+    const ctx = await buildTestApp({
+      repos: {
+        locations: {
+          list: async () => ({ rows: [parentWithContact], total: 1 }),
+          getById: async (id: string) =>
+            id === 'loc-child' ? childNoContact : id === 'loc-parent' ? parentWithContact : null,
+        },
+      },
+    });
+
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations',
+      headers: auth(ctx.tokens.viewer),
+    });
+    expect(list.json().data[0]).toMatchObject({
+      phone: '+39 06 555555',
+      email: 'info@aurelia.it',
+      website: 'https://aurelia.it',
+    });
+
+    const detail = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations/loc-child',
+      headers: auth(ctx.tokens.viewer),
+    });
+    const body = detail.json();
+    expect(body.phone).toBeNull();
+    expect(body.effective_contact).toEqual({
+      phone: '+39 06 555555',
+      email: 'info@aurelia.it',
+      website: 'https://aurelia.it',
+    });
+    expect(body.inherited_fields).toEqual(expect.arrayContaining(['phone', 'email', 'website']));
   });
 });

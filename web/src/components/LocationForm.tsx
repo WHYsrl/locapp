@@ -16,6 +16,9 @@ interface FormState {
   city: string;
   province: string;
   postal_code: string;
+  phone: string;
+  email: string;
+  website: string;
   google_maps_url: string;
   lng: string;
   lat: string;
@@ -65,6 +68,9 @@ function fromDetail(loc?: LocationDetail | null): FormState {
     city: loc?.city ?? "",
     province: loc?.province ?? "",
     postal_code: loc?.postal_code ?? "",
+    phone: loc?.phone ?? "",
+    email: loc?.email ?? "",
+    website: loc?.website ?? "",
     google_maps_url: loc?.google_maps_url ?? "",
     lng: loc?.lng != null ? String(loc.lng) : "",
     lat: loc?.lat != null ? String(loc.lat) : "",
@@ -113,6 +119,9 @@ function toPayload(f: FormState): Partial<LocationBase> {
     city: str(f.city),
     province: str(f.province),
     postal_code: str(f.postal_code),
+    phone: str(f.phone),
+    email: str(f.email),
+    website: str(f.website),
     google_maps_url: str(f.google_maps_url),
     lng: num(f.lng),
     lat: num(f.lat),
@@ -236,6 +245,33 @@ export default function LocationForm({
           </Field>
           <Field label="CAP">
             <input className={inputCls} value={f.postal_code} onChange={(e) => set("postal_code", e.target.value)} />
+          </Field>
+          <Field label="Telefono">
+            <input
+              className={inputCls}
+              type="tel"
+              value={f.phone}
+              onChange={(e) => set("phone", e.target.value)}
+              placeholder="es. +39 02 1234567"
+            />
+          </Field>
+          <Field label="Email">
+            <input
+              className={inputCls}
+              type="email"
+              value={f.email}
+              onChange={(e) => set("email", e.target.value)}
+              placeholder="es. info@location.it"
+            />
+          </Field>
+          <Field label="Sito web" className="md:col-span-2">
+            <input
+              className={inputCls}
+              inputMode="url"
+              value={f.website}
+              onChange={(e) => set("website", e.target.value)}
+              placeholder="es. https://www.location.it"
+            />
           </Field>
           <div className="md:col-span-2">
             <GeocodeSuggest

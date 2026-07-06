@@ -135,6 +135,9 @@ export interface LocationBase {
   /** GeoJSON point as returned by some backends. */
   geom?: { type: "Point"; coordinates: [number, number] } | null;
   google_maps_url?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
   thumbnail_url?: string | null;
   visit_status: VisitStatus;
   logistics?: Logistics | null;
@@ -186,12 +189,18 @@ export interface SupplierEntry {
   rating?: number | null;
 }
 
+export type MediaKind = "foto" | "video" | "planimetria" | "documento" | "listino";
+export type MediaCategory = "esterni" | "interni" | "sala" | "servizi" | "setup";
+
 export interface Media {
   id: string;
-  kind: "foto" | "video" | "planimetria" | "documento" | "listino";
-  category?: string | null;
+  kind: MediaKind;
+  category?: MediaCategory | null;
+  space_id?: string | null;
   url?: string | null;
   filename?: string | null;
+  mime?: string | null;
+  created_at?: string;
 }
 
 export interface PriceListItem {
@@ -218,6 +227,10 @@ export interface LocationDetail extends LocationBase {
   effective_logistics?: Logistics | null;
   /** true when logistics is inherited from the parent location */
   logistics_inherited?: boolean;
+  /** Contact fields resolved with parent fallback (if the API provides them). */
+  effective_phone?: string | null;
+  effective_email?: string | null;
+  effective_website?: string | null;
   spaces: Space[];
   contacts: LocationContactEntry[];
   suppliers: SupplierEntry[];

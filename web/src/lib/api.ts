@@ -24,6 +24,9 @@ import type {
   LocationFilters,
   LocationListItem,
   MapFeatureCollection,
+  Media,
+  MediaCategory,
+  MediaKind,
   Paginated,
   Poi,
   Project,
@@ -159,6 +162,74 @@ export function updateLocation(id: string, payload: Partial<LocationBase>): Prom
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+// ---- media (upload & cataloging) ----
+
+/** Some endpoints wrap single resources in {data:...}; accept both shapes. */
+function unwrapData<T>(res: T | { data: T }): T {
+  if (res && typeof res === "object" && "data" in res) return (res as { data: T }).data;
+  return res as T;
+}
+
+/**
+ * Registers a media item on a location. Returns the media row plus a
+ * presigned `upload_url`: the caller must then PUT the raw file there
+ * (see uploadToPresignedUrl). 503 code 'storage_not_configured' when S3
+ * env vars are missing on the backend.
+ */
+export function createLocationMedia(
+  locationId: string,
+  payload: {
+    kind: MediaKind;
+    category?: MediaCategory | null;
+    space_id?: string | null;
+    filename: string;
+    mime: string;
+  }
+): Promise<Media & { upload_url: string }> {
+  return http<{ data: Media & { upload_url: string } } | (Media & { upload_url: string })>(
+    `/locations/${locationId}/media`,
+    { method: "POST", body: JSON.stringify(payload) }
+  ).then(unwrapData);
+}
+
+/** Raw PUT of the file body to the presigned URL (no auth header, no /api/v1 prefix). */
+export async function uploadToPresignedUrl(url: string, file: Blob, mime: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": mime },
+      body: file,
+    });
+  } catch {
+    throw new NetworkError("Caricamento del file non riuscito");
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, "upload_failed", `Upload del file fallito (HTTP ${res.status})`);
+  }
+}
+
+/** Presigned GET URL for display/download (valid ~1h). */
+export function getMediaUrl(id: string): Promise<string> {
+  return http<{ data: { url: string } } | { url: string }>(`/media/${id}/url`)
+    .then(unwrapData)
+    .then((r) => r.url);
+}
+
+export function updateMedia(
+  id: string,
+  patch: { kind?: MediaKind; category?: MediaCategory | null; space_id?: string | null }
+): Promise<Media> {
+  return http<{ data: Media } | Media>(`/media/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  }).then(unwrapData);
+}
+
+export function deleteMedia(id: string): Promise<void> {
+  return http(`/media/${id}`, { method: "DELETE" });
 }
 
 // ---- geocoding ----
