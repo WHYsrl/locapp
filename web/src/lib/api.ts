@@ -30,6 +30,8 @@ import type {
   MediaKind,
   Paginated,
   Poi,
+  PoiDistance,
+  PoiKind,
   Project,
   ProjectDetail,
   Quote,
@@ -133,6 +135,17 @@ export function login(email: string, password: string): Promise<{ token: string;
   });
 }
 
+/**
+ * Google SSO: exchanges the Google Identity Services id_token for a session.
+ * 403 → account not allowed (show backend message); 503 sso_not_configured.
+ */
+export function loginWithGoogle(idToken: string): Promise<{ token: string; user: User }> {
+  return http("/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ id_token: idToken }),
+  });
+}
+
 // ---- locations ----
 
 export function listLocations(filters: LocationFilters = {}): Promise<LocationListItem[]> {
@@ -173,6 +186,14 @@ export function updateLocation(id: string, payload: Partial<LocationBase>): Prom
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+/**
+ * Elimina una location. Senza force il backend risponde 409 con
+ * error.code LOCATION_IN_USE | HAS_CHILDREN quando è referenziata.
+ */
+export function deleteLocation(id: string, force = false): Promise<void> {
+  return http(`/locations/${id}${force ? "?force=true" : ""}`, { method: "DELETE" });
 }
 
 // ---- media (upload & cataloging) ----
@@ -372,8 +393,52 @@ export function searchBrief(params: {
   );
 }
 
-export function listPois(): Promise<Poi[]> {
-  return unwrap(http("/pois"));
+// ---- POI (punti di interesse) ----
+
+export function listPois(filters: { kind?: PoiKind | ""; q?: string } = {}): Promise<Poi[]> {
+  return unwrap(http(`/pois${qs(filters)}`));
+}
+
+export function createPoi(payload: {
+  name: string;
+  kind: PoiKind;
+  lat: number;
+  lng: number;
+  address?: string | null;
+  city?: string | null;
+  notes?: string | null;
+}): Promise<Poi> {
+  return http<{ data: Poi } | Poi>("/pois", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }).then(unwrapData);
+}
+
+export function updatePoi(
+  id: string,
+  patch: Partial<{
+    name: string;
+    kind: PoiKind;
+    lat: number;
+    lng: number;
+    address: string | null;
+    city: string | null;
+    notes: string | null;
+  }>
+): Promise<Poi> {
+  return http<{ data: Poi } | Poi>(`/pois/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  }).then(unwrapData);
+}
+
+export function deletePoi(id: string): Promise<void> {
+  return http(`/pois/${id}`, { method: "DELETE" });
+}
+
+/** Distanze location → tutti i POI, ordinate per km. */
+export function getPoiDistances(locationId: string): Promise<PoiDistance[]> {
+  return unwrap(http(`/locations/${locationId}/poi-distances`));
 }
 
 // ---- projects & events ----
@@ -400,6 +465,11 @@ export function updateProject(id: string, payload: Partial<Project>): Promise<Pr
   });
 }
 
+/** 409 PROJECT_HAS_EVENTS senza force quando il progetto contiene eventi. */
+export function deleteProject(id: string, force = false): Promise<void> {
+  return http(`/projects/${id}${force ? "?force=true" : ""}`, { method: "DELETE" });
+}
+
 export function createEvent(projectId: string, payload: Partial<EventItem>): Promise<EventItem> {
   return http(`/projects/${projectId}/events`, {
     method: "POST",
@@ -416,6 +486,11 @@ export function updateEvent(id: string, payload: Partial<EventItem>): Promise<Ev
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+/** Elimina l'evento (cascata su shortlist, sopralluoghi, preventivi…). */
+export function deleteEvent(id: string): Promise<void> {
+  return http(`/events/${id}`, { method: "DELETE" });
 }
 
 export function getEventLocations(eventId: string): Promise<EventLocationEntry[]> {

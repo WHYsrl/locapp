@@ -41,4 +41,19 @@ final class LocationsViewModel {
             errorMessage = error.localizedDescription
         }
     }
+
+    func deleteLocation(_ location: Location, force: Bool = false) async -> DeleteResult {
+        do {
+            try await APIClient.shared.deleteLocation(id: location.id, force: force)
+            locations.removeAll { $0.id == location.id }
+            return .deleted
+        } catch let error as APIError where error.isConflict {
+            return .conflict(
+                message: error.serverMessage ?? "La location è in uso o ha location collegate."
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+            return .failed
+        }
+    }
 }

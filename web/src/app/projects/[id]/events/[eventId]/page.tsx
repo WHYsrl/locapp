@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import MapView, { type MapMarker } from "@/components/MapView";
 import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
-import { Badge, Card, EmptyState, Modal, PageHeader, ScoreBadge, Spinner, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { useDeleteFlow } from "@/lib/useDeleteFlow";
+import { Badge, Card, EmptyState, Modal, PageHeader, ScoreBadge, SegmentedControl, Spinner, btnDangerGhost, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import {
   AVAILABILITY_CLASSES,
   AVAILABILITY_LABELS,
@@ -36,6 +38,7 @@ export default function EventShortlistPage() {
   const projectId = params.id;
   const eventId = params.eventId;
   const qc = useQueryClient();
+  const router = useRouter();
   const [view, setView] = useState<View>("board");
   const [addOpen, setAddOpen] = useState(false);
   const [addLocationId, setAddLocationId] = useState("");
@@ -73,6 +76,17 @@ export default function EventShortlistPage() {
       setEditingTags(false);
       qc.invalidateQueries({ queryKey: ["event", eventId] });
       qc.invalidateQueries({ queryKey: ["tags"] });
+    },
+  });
+
+  const deleteFlow = useDeleteFlow({
+    doDelete: () => api.deleteEvent(eventId),
+    forcible: false,
+    onDeleted: () => {
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.removeQueries({ queryKey: ["event", eventId] });
+      router.push(`/projects/${projectId}`);
     },
   });
 
@@ -124,23 +138,18 @@ export default function EventShortlistPage() {
         }
         action={
           <>
-            <div className="flex overflow-hidden rounded-lg border border-berry/20">
-              {(
-                [
-                  ["board", "Shortlist"],
-                  ["compare", "Confronta"],
-                  ["map", "Mappa"],
-                ] as [View, string][]
-              ).map(([v, label]) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`px-4 py-2 text-sm font-semibold ${view === v ? "bg-berry text-white" : "bg-white text-berry"}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl<View>
+              value={view}
+              onChange={setView}
+              options={[
+                ["board", "Shortlist"],
+                ["compare", "Confronta"],
+                ["map", "Mappa"],
+              ]}
+            />
+            <button className={btnDangerGhost} onClick={deleteFlow.open}>
+              Elimina evento
+            </button>
             <button className={btnPrimary} onClick={() => setAddOpen(true)}>
               + Aggiungi location
             </button>
@@ -233,6 +242,17 @@ export default function EventShortlistPage() {
           </button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        {...deleteFlow.dialogProps}
+        title="Eliminare l'evento?"
+        message={
+          <>
+            <span className="font-semibold text-ink">{event?.name ?? "L'evento"}</span> verrà eliminato con
+            tutta la shortlist, i sopralluoghi, i preventivi e le disponibilità collegate.
+          </>
+        }
+      />
     </div>
   );
 }
@@ -241,7 +261,7 @@ function CompareView({ compare }: { compare?: import("@/lib/types").CompareMatri
   if (!compare) return <Spinner />;
   if (compare.locations.length === 0) return <EmptyState title="Nessuna location da confrontare" />;
   return (
-    <div className="overflow-x-auto rounded-xl border border-berry/10 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-2xl border border-hairline bg-white shadow-soft">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-berry/10 bg-tint/60">
@@ -396,8 +416,8 @@ function SectionToggle({ active, onClick, label }: { active: boolean; onClick: (
   return (
     <button
       onClick={onClick}
-      className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-        active ? "bg-berry text-white" : "bg-tint text-ink/60 hover:text-berry"
+      className={`rounded-full px-3.5 py-1.5 text-sm font-semibold transition duration-150 ${
+        active ? "bg-berry text-white shadow-sm" : "bg-black/[0.05] text-ink/60 hover:text-berry"
       }`}
     >
       {label}

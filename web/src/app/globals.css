@@ -1,24 +1,56 @@
 @import "tailwindcss";
 
+/*
+ * Apple-contemporary theme (2026 "liquid glass"): neutral near-white base,
+ * white cards with hairline borders and soft shadows, berry/rose/gold kept
+ * as accents. Tokens are centralized here; components use the utilities
+ * they generate (bg-surface, border-hairline, shadow-soft, …).
+ */
 @theme {
   --color-berry: #6d2e46;
   --color-berry-dark: #571f36;
   --color-rose: #a26769;
   --color-gold: #c9a227;
-  --color-tint: #f7f0f3;
-  --color-ink: #2b2433;
+  /* neutral base (ex tinta rosata): tutte le superfici secondarie la usano */
+  --color-tint: #f5f5f7;
+  --color-surface: #f5f5f7;
+  --color-ink: #1d1d1f;
+  --color-hairline: rgb(0 0 0 / 0.08);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter,
+    system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.05);
+  --shadow-glass: 0 1px 0 rgb(255 255 255 / 0.6) inset, 0 8px 32px rgb(0 0 0 / 0.08);
 }
 
 body {
-  background: var(--color-tint);
+  background: var(--color-surface);
   color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tighter tracking on headings (SF Pro-like optical rhythm). */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
 }
 
 /* MapLibre popup theming */
 .maplibregl-popup-content {
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 10px 14px;
   font-family: inherit;
   color: var(--color-ink);
-  box-shadow: 0 8px 24px rgb(43 36 51 / 0.18);
+  border: 1px solid rgb(0 0 0 / 0.08);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+}
+
+/* Google Maps InfoWindow: align with the card language */
+.gm-style .gm-style-iw-c {
+  border-radius: 14px;
+  font-family: inherit;
 }

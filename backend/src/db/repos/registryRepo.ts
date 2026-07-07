@@ -3,6 +3,17 @@ import type { Db } from '../client.js';
 import { companies, companyContacts, contacts, pois } from '../schema.js';
 import type { Pagination } from '../../lib/pagination.js';
 
+const poiSelection = {
+  id: pois.id,
+  name: pois.name,
+  kind: pois.kind,
+  address: pois.address,
+  city: pois.city,
+  notes: pois.notes,
+  lon: sql<number | null>`ST_X(${pois.geom})`,
+  lat: sql<number | null>`ST_Y(${pois.geom})`,
+};
+
 export function createRegistryRepo(db: Db) {
   return {
     // ---- companies ----
@@ -127,35 +138,36 @@ export function createRegistryRepo(db: Db) {
     },
 
     // ---- pois ----
-    async listPois() {
+    async listPois(filters: { kind?: string; q?: string } = {}) {
+      const conds = [];
+      if (filters.kind) conds.push(eq(pois.kind, filters.kind as never));
+      if (filters.q) {
+        conds.push(or(ilike(pois.name, `%${filters.q}%`), ilike(pois.city, `%${filters.q}%`))!);
+      }
       return db
-        .select({
-          id: pois.id,
-          name: pois.name,
-          kind: pois.kind,
-          lon: sql<number | null>`ST_X(${pois.geom})`,
-          lat: sql<number | null>`ST_Y(${pois.geom})`,
-        })
+        .select(poiSelection)
         .from(pois)
+        .where(conds.length > 0 ? and(...conds) : undefined)
         .orderBy(desc(pois.name));
     },
     async getPoi(id: string) {
-      const rows = await db
-        .select({
-          id: pois.id,
-          name: pois.name,
-          kind: pois.kind,
-          lon: sql<number | null>`ST_X(${pois.geom})`,
-          lat: sql<number | null>`ST_Y(${pois.geom})`,
-        })
-        .from(pois)
-        .where(eq(pois.id, id))
-        .limit(1);
+      const rows = await db.select(poiSelection).from(pois).where(eq(pois.id, id)).limit(1);
       return rows[0] ?? null;
     },
     async createPoi(input: typeof pois.$inferInsert) {
-      const rows = await db.insert(pois).values(input).returning({ id: pois.id, name: pois.name, kind: pois.kind });
-      return rows[0]!;
+      const rows = await db.insert(pois).values(input).returning({ id: pois.id });
+      const created = await db.select(poiSelection).from(pois).where(eq(pois.id, rows[0]!.id)).limit(1);
+      return created[0]!;
+    },
+    async updatePoi(id: string, patch: Partial<typeof pois.$inferInsert>) {
+      const rows = await db.update(pois).set(patch).where(eq(pois.id, id)).returning({ id: pois.id });
+      if (rows.length === 0) return null;
+      const updated = await db.select(poiSelection).from(pois).where(eq(pois.id, id)).limit(1);
+      return updated[0] ?? null;
+    },
+    async deletePoi(id: string) {
+      const rows = await db.delete(pois).where(eq(pois.id, id)).returning({ id: pois.id });
+      return rows.length > 0;
     },
   };
 }

@@ -262,6 +262,9 @@ export const pois = pgTable(
     name: text('name').notNull(),
     kind: text('kind').$type<PoiKind>().notNull().default('altro'),
     geom: geometryPoint('geom'),
+    address: text('address'),
+    city: text('city'),
+    notes: text('notes'),
   },
   (t) => [index('pois_geom_gist').using('gist', t.geom)],
 );
@@ -438,12 +441,17 @@ export const ingestionJobs = pgTable('ingestion_jobs', {
   appliedAt: timestamp('applied_at', { withTimezone: true }),
 });
 
+export type AuthProvider = 'password' | 'google';
+
 export const users = pgTable('users', {
   id: pk(),
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
   role: text('role').$type<UserRole>().notNull().default('viewer'),
+  googleSub: text('google_sub').unique(),
+  avatarUrl: text('avatar_url'),
+  authProvider: text('auth_provider').$type<AuthProvider>().notNull().default('password'),
   createdAt: createdAt(),
 });
 

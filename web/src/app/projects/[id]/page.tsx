@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import MapView, { type MapMarker } from "@/components/MapView";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
-import { Badge, EmptyState, Modal, PageHeader, Spinner, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { useDeleteFlow } from "@/lib/useDeleteFlow";
+import { Badge, EmptyState, Modal, PageHeader, Spinner, btnDangerGhost, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import {
   EL_STATUSES,
   EL_STATUS_CLASSES,
@@ -29,6 +31,7 @@ export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const qc = useQueryClient();
+  const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
   const [evName, setEvName] = useState("");
   const [evType, setEvType] = useState("");
@@ -81,6 +84,15 @@ export default function ProjectDetailPage() {
     },
   });
 
+  const deleteFlow = useDeleteFlow({
+    doDelete: (force) => api.deleteProject(id, force),
+    onDeleted: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.removeQueries({ queryKey: ["project", id] });
+      router.push("/projects");
+    },
+  });
+
   const markers: MapMarker[] = useMemo(
     () =>
       (mapData?.features ?? []).map((f) => ({
@@ -121,9 +133,14 @@ export default function ProjectDetailPage() {
           </>
         }
         action={
-          <button className={btnPrimary} onClick={() => setCreateOpen(true)}>
-            + Nuovo evento
-          </button>
+          <>
+            <button className={btnDangerGhost} onClick={deleteFlow.open}>
+              Elimina progetto
+            </button>
+            <button className={btnPrimary} onClick={() => setCreateOpen(true)}>
+              + Nuovo evento
+            </button>
+          </>
         }
       />
 
@@ -174,11 +191,11 @@ export default function ProjectDetailPage() {
                 <Link
                   key={ev.id}
                   href={`/projects/${id}/events/${ev.id}`}
-                  className="block rounded-xl border border-berry/10 bg-white p-5 shadow-sm transition hover:border-berry/30 hover:shadow"
+                  className="block rounded-2xl border border-hairline bg-white p-5 shadow-soft transition duration-200 hover:border-berry/25 hover:shadow-md"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-lg font-bold text-berry">{ev.name}</h2>
+                      <h2 className="text-lg font-semibold tracking-tight text-berry">{ev.name}</h2>
                       <p className="text-sm text-ink/55">
                         {[ev.event_type, formatDate(ev.date_start), ev.pax ? `${ev.pax} pax` : null].filter(Boolean).join(" · ")}
                       </p>
@@ -246,6 +263,33 @@ export default function ProjectDetailPage() {
           </button>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        {...deleteFlow.dialogProps}
+        title="Eliminare il progetto?"
+        message={
+          <>
+            <span className="font-semibold text-ink">{project.name}</span> verrà eliminato definitivamente.
+          </>
+        }
+        warning={
+          deleteFlow.dialogProps.warning ? (
+            <div>
+              <p>{deleteFlow.dialogProps.warning}</p>
+              {project.events.length > 0 && (
+                <ul className="mt-2 list-inside list-disc space-y-0.5">
+                  {project.events.map((ev) => (
+                    <li key={ev.id}>
+                      {ev.name}
+                      {ev.date_start ? ` · ${formatDate(ev.date_start)}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : undefined
+        }
+      />
     </div>
   );
 }

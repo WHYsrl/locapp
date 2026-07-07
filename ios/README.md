@@ -26,6 +26,27 @@ Then in Xcode:
 3. The API base URL defaults to `https://venuescout-api.onrender.com` and can be changed in
    the *Impostazioni* tab (stored in `UserDefaults` under the key `APIBaseURL`).
 
+## Accesso con Google (SSO, senza SDK)
+
+The app implements native Sign in with Google (OAuth 2.0 authorization-code + PKCE via
+`ASWebAuthenticationSession`, `Features/Settings/GoogleSignIn.swift`) and exchanges the
+resulting `id_token` at `POST /api/v1/auth/google`. Setup:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an
+   OAuth client of type **iOS** with bundle id `it.justwhy.venuescout`. You get a client ID like
+   `1234567890-abcdefg.apps.googleusercontent.com` (iOS clients have **no client secret**).
+2. Compute the **reversed client ID** by reversing the dot-separated components:
+   `com.googleusercontent.apps.1234567890-abcdefg`.
+3. In `ios/project.yml`, under `CFBundleURLTypes`, replace the placeholder scheme
+   `com.googleusercontent.apps.REPLACE-WITH-IOS-CLIENT-ID` with your reversed client ID,
+   then re-run `xcodegen generate`.
+4. Run the app and paste the (non-reversed) client ID in *Impostazioni → Accesso Google (SSO)*
+   (stored in `UserDefaults` under the key `GoogleiOSClientID`). The "Accedi con Google"
+   button appears in the Account section once the field is non-empty.
+
+The backend answers `403` (with a message) if the Google account is not allowed and `503`
+if SSO is not configured server-side; both messages are shown in Impostazioni.
+
 ## Project layout
 
 ```

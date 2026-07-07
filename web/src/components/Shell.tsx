@@ -13,6 +13,7 @@ const NAV = [
   { href: "/search", label: "Ricerca AI", icon: "✦" },
   { href: "/ingest", label: "Acquisizione AI", icon: "⇪" },
   { href: "/projects", label: "Progetti", icon: "▤" },
+  { href: "/poi", label: "Punti di interesse", icon: "◎" },
   { href: "/contatti", label: "Contatti", icon: "☎" },
   { href: "/tag", label: "Tag", icon: "#" },
 ];
@@ -34,10 +35,10 @@ function NetworkErrorBanner() {
   if (!visible) return null;
 
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
       <p className="text-sm font-medium text-red-700">Impossibile raggiungere il server — riprova</p>
       <button
-        className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+        className="rounded-full border border-red-300 bg-white px-4 py-1.5 text-sm font-semibold text-red-700 transition duration-150 hover:bg-red-100 disabled:opacity-50"
         disabled={retrying}
         onClick={async () => {
           setRetrying(true);
@@ -73,50 +74,70 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   if (pathname === "/login") return <>{children}</>;
 
+  const current = NAV.find((item) =>
+    item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
+  );
+
   return (
     <div className="flex min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-berry text-white">
-        <Link href="/" className="flex items-center gap-2 px-6 py-6">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold text-lg font-black text-berry">V</span>
-          <span className="text-lg font-bold tracking-tight">
-            Venue<span className="text-gold">Scout</span>
+      {/* glass sidebar */}
+      <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-hairline bg-white/70 backdrop-blur-xl">
+        <Link href="/" className="flex items-center gap-2.5 px-6 py-6">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-berry text-lg font-black text-gold shadow-sm">
+            V
+          </span>
+          <span className="text-lg font-bold tracking-tight text-ink">
+            Venue<span className="text-berry">Scout</span>
           </span>
         </Link>
-        <nav className="flex-1 space-y-1 px-3">
+        <nav className="flex-1 space-y-0.5 px-3">
           {NAV.map((item) => {
             const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                  active ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition duration-150 ${
+                  active
+                    ? "bg-berry/10 font-semibold text-berry"
+                    : "font-medium text-ink/60 hover:bg-black/[0.04] hover:text-ink"
                 }`}
               >
-                <span className="w-5 text-center text-base leading-none">{item.icon}</span>
+                <span className="w-5 text-center text-base leading-none" aria-hidden>
+                  {item.icon}
+                </span>
                 {item.label}
               </Link>
             );
           })}
         </nav>
-        <div className="px-3 pb-6">
+        <div className="border-t border-hairline px-6 py-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-ink/35">VenueScout</p>
+        </div>
+      </aside>
+
+      <div className="ml-60 flex min-h-screen flex-1 flex-col">
+        {/* sticky translucent top bar */}
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-hairline bg-white/70 px-8 backdrop-blur-xl">
+          <p className="text-sm font-semibold tracking-tight text-ink/70">{current?.label ?? "VenueScout"}</p>
           <button
             onClick={() => {
               clearToken();
               router.replace("/login");
             }}
-            className="w-full rounded-lg px-3 py-2 text-left text-sm text-white/60 transition hover:bg-white/10 hover:text-white"
+            className="rounded-full px-3.5 py-1.5 text-sm font-medium text-ink/55 transition duration-150 hover:bg-black/[0.04] hover:text-ink"
           >
             Esci
           </button>
-        </div>
-      </aside>
-      <main className="ml-60 min-h-screen flex-1 px-8 py-8">
-        <div className="mx-auto max-w-6xl">
-          <NetworkErrorBanner />
-          {ready ? children : null}
-        </div>
-      </main>
+        </header>
+
+        <main className="flex-1 px-8 py-8">
+          <div className="mx-auto max-w-6xl">
+            <NetworkErrorBanner />
+            {ready ? children : null}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

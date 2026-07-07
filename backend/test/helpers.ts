@@ -17,7 +17,9 @@ export function makeRepos(overrides: SectionOverrides = {}): Repos {
     users: {
       findByEmail: vi.fn(async () => null),
       findById: vi.fn(async () => null),
+      findByGoogleSub: vi.fn(async () => null),
       create: vi.fn(async (input: Record<string, unknown>) => ({ id: 'user-1', createdAt: new Date(), ...input })),
+      update: vi.fn(async (id: string, patch: Record<string, unknown>) => ({ id, ...patch })),
     },
     locations: {
       list: vi.fn(async () => ({ rows: [], total: 0 })),
@@ -60,6 +62,9 @@ export function makeRepos(overrides: SectionOverrides = {}): Repos {
       createProjectNote: vi.fn(async (input: Record<string, unknown>) => ({ id: 'note-1', ...input })),
       capacitiesForLocations: vi.fn(async () => []),
       coordinates: vi.fn(async () => []),
+      listChildren: vi.fn(async () => []),
+      detachChildren: vi.fn(async () => 0),
+      removeShortlistReferences: vi.fn(async () => 0),
     },
     projects: {
       list: vi.fn(async () => ({ rows: [], total: 0 })),
@@ -73,6 +78,7 @@ export function makeRepos(overrides: SectionOverrides = {}): Repos {
       createEvent: vi.fn(async (input: Record<string, unknown>) => ({ id: 'event-1', ...input })),
       updateEvent: vi.fn(async () => null),
       deleteEvent: vi.fn(async () => true),
+      deleteEventsForProject: vi.fn(async () => 0),
       listEventLocations: vi.fn(async () => []),
       getEventLocation: vi.fn(async () => null),
       addEventLocation: vi.fn(async (input: Record<string, unknown>) => ({ id: 'el-1', ...input })),
@@ -112,6 +118,8 @@ export function makeRepos(overrides: SectionOverrides = {}): Repos {
       listPois: vi.fn(async () => []),
       getPoi: vi.fn(async () => null),
       createPoi: vi.fn(async (input: Record<string, unknown>) => ({ id: 'poi-1', ...input })),
+      updatePoi: vi.fn(async (id: string, patch: Record<string, unknown>) => ({ id, ...patch })),
+      deletePoi: vi.fn(async () => true),
     },
     tags: {
       list: vi.fn(async () => []),
@@ -205,6 +213,10 @@ export async function buildTestApp(
     storage?: Partial<StorageService>;
     geocode?: GeocodeFn;
     renderMapThumb?: (lat: number, lon: number) => Promise<Buffer>;
+    googleClientIds?: string[];
+    googleAllowedDomains?: string[];
+    googleMapsApiKey?: string;
+    fetchFn?: typeof fetch;
   } = {},
 ): Promise<TestContext> {
   const repos = makeRepos(overrides.repos);
@@ -215,7 +227,18 @@ export async function buildTestApp(
   // Hermetic by default: tests never fetch OSM tiles or run sharp.
   const renderMapThumb =
     overrides.renderMapThumb ?? vi.fn(async () => Buffer.from('fake-png'));
-  const deps: AppDeps = { repos, ai, storage, geocode, renderMapThumb, jwtSecret: TEST_SECRET };
+  const deps: AppDeps = {
+    repos,
+    ai,
+    storage,
+    geocode,
+    renderMapThumb,
+    jwtSecret: TEST_SECRET,
+    googleClientIds: overrides.googleClientIds,
+    googleAllowedDomains: overrides.googleAllowedDomains,
+    googleMapsApiKey: overrides.googleMapsApiKey,
+    fetchFn: overrides.fetchFn,
+  };
   const app = await buildApp(deps);
   const tokens = {
     admin: signToken({ id: 'u-admin', email: 'admin@test.it', name: 'Admin', role: 'admin' }, TEST_SECRET),

@@ -349,12 +349,26 @@ export interface CompareMatrix {
 
 // ---- search ---------------------------------------------------------------
 
+export type PoiKind = "hotel" | "aeroporto" | "stazione" | "monumento" | "altro";
+
 export interface Poi {
   id: string;
   name: string;
-  kind: "hotel" | "aeroporto" | "stazione" | "monumento" | "altro";
+  kind: PoiKind;
   lng: number;
   lat: number;
+  address?: string | null;
+  city?: string | null;
+  notes?: string | null;
+}
+
+/** Row of GET /locations/:id/poi-distances (sorted by km on the backend). */
+export interface PoiDistance {
+  poi: Poi;
+  km: number;
+  minutes_car: number;
+  /** true when the backend estimated the drive time (no routing provider). */
+  estimated?: boolean;
 }
 
 export interface SearchResult {

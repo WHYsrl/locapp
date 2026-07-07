@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import MapView, { type MapMarker } from "@/components/MapView";
-import { Badge, EmptyState, PageHeader, Spinner, Stars, Tag, inputCls } from "@/components/ui";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { useDeleteFlow } from "@/lib/useDeleteFlow";
+import { Badge, EmptyState, PageHeader, SegmentedControl, Spinner, Stars, Tag, btnPrimary, inputCls } from "@/components/ui";
 import {
   CONFIGURATIONS,
   CONFIG_LABELS,
@@ -20,7 +22,7 @@ import { lngLatOf, type Configuration, type EffectiveStatus, type LocationFilter
 function RowThumb({ loc }: { loc: LocationListItem }) {
   const [broken, setBroken] = useState(false);
   const src = loc.thumbnail_url ? api.resolveApiUrl(loc.thumbnail_url) : api.mapThumbUrl(loc.id);
-  if (broken) return <div className="h-11 w-[72px] rounded-md border border-berry/10 bg-tint" aria-hidden />;
+  if (broken) return <div className="h-11 w-[72px] rounded-lg border border-hairline bg-surface" aria-hidden />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -28,12 +30,67 @@ function RowThumb({ loc }: { loc: LocationListItem }) {
       alt=""
       loading="lazy"
       onError={() => setBroken(true)}
-      className="h-11 w-[72px] rounded-md border border-berry/10 object-cover"
+      className="h-11 w-[72px] rounded-lg border border-hairline object-cover"
     />
   );
 }
 
+/** Row actions dropdown ("⋯"): apri, modifica, elimina. */
+function RowMenu({ loc, onDelete }: { loc: LocationListItem; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        className="rounded-full px-2.5 py-1 text-base leading-none text-ink/45 transition duration-150 hover:bg-black/[0.05] hover:text-ink"
+        aria-label={`Azioni per ${loc.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        ⋯
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} aria-hidden />
+          <div
+            role="menu"
+            className="absolute right-0 z-40 mt-1 w-44 overflow-hidden rounded-xl border border-hairline bg-white/95 py-1 shadow-soft backdrop-blur-xl"
+          >
+            <Link
+              role="menuitem"
+              href={`/locations/${loc.id}`}
+              className="block px-3.5 py-2 text-sm text-ink/80 transition duration-150 hover:bg-black/[0.04]"
+              onClick={() => setOpen(false)}
+            >
+              Apri scheda
+            </Link>
+            <Link
+              role="menuitem"
+              href={`/locations/${loc.id}/edit`}
+              className="block px-3.5 py-2 text-sm text-ink/80 transition duration-150 hover:bg-black/[0.04]"
+              onClick={() => setOpen(false)}
+            >
+              Modifica
+            </Link>
+            <button
+              role="menuitem"
+              className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition duration-150 hover:bg-red-50"
+              onClick={() => {
+                setOpen(false);
+                onDelete();
+              }}
+            >
+              Elimina
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function LocationsPage() {
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [city, setCity] = useState("");
   const [tag, setTag] = useState("");
@@ -41,6 +98,15 @@ export default function LocationsPage() {
   const [minCapacity, setMinCapacity] = useState("");
   const [configuration, setConfiguration] = useState<Configuration | "">("");
   const [view, setView] = useState<"table" | "map">("table");
+  const [deleting, setDeleting] = useState<LocationListItem | null>(null);
+
+  const del = useDeleteFlow({
+    doDelete: (force) => api.deleteLocation(deleting!.id, force),
+    onDeleted: () => {
+      setDeleting(null);
+      qc.invalidateQueries({ queryKey: ["locations"] });
+    },
+  });
 
   const filters: LocationFilters = useMemo(
     () => ({
@@ -93,28 +159,22 @@ export default function LocationsPage() {
         subtitle={`${locations?.length ?? 0} location in archivio`}
         action={
           <>
-            <div className="flex overflow-hidden rounded-lg border border-berry/20">
-              <button
-                onClick={() => setView("table")}
-                className={`px-4 py-2 text-sm font-semibold ${view === "table" ? "bg-berry text-white" : "bg-white text-berry"}`}
-              >
-                Tabella
-              </button>
-              <button
-                onClick={() => setView("map")}
-                className={`px-4 py-2 text-sm font-semibold ${view === "map" ? "bg-berry text-white" : "bg-white text-berry"}`}
-              >
-                Mappa
-              </button>
-            </div>
-            <Link href="/locations/new" className="rounded-lg bg-berry px-4 py-2 text-sm font-semibold text-white hover:bg-berry-dark">
+            <SegmentedControl<"table" | "map">
+              value={view}
+              onChange={setView}
+              options={[
+                ["table", "Tabella"],
+                ["map", "Mappa"],
+              ]}
+            />
+            <Link href="/locations/new" className={btnPrimary}>
               + Nuova
             </Link>
           </>
         }
       />
 
-      <div className="mb-5 grid grid-cols-2 gap-3 rounded-xl border border-berry/10 bg-white p-4 shadow-sm md:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-5 grid grid-cols-2 gap-3 rounded-2xl border border-hairline bg-white p-4 shadow-soft md:grid-cols-3 lg:grid-cols-6">
         <input className={inputCls} placeholder="Cerca…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select className={inputCls} value={city} onChange={(e) => setCity(e.target.value)}>
           <option value="">Tutte le città</option>
@@ -165,24 +225,26 @@ export default function LocationsPage() {
       ) : (locations ?? []).length === 0 ? (
         <EmptyState title="Nessuna location trovata" hint="Prova a modificare i filtri di ricerca." />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-berry/10 bg-white shadow-sm">
+        // overflow visibile: il menù ⋯ delle righe non deve essere tagliato
+        <div className="rounded-2xl border border-hairline bg-white shadow-soft">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-berry/10 bg-tint/60 text-left text-xs font-semibold uppercase tracking-wide text-ink/50">
-                <th className="w-24 px-4 py-3">Mappa</th>
+              <tr className="border-b border-hairline bg-surface/70 text-left text-xs font-semibold uppercase tracking-wide text-ink/50">
+                <th className="w-24 rounded-tl-2xl px-4 py-3">Mappa</th>
                 <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Città</th>
                 <th className="px-4 py-3">Tag</th>
                 <th className="px-4 py-3 text-right">Capienza max</th>
                 <th className="px-4 py-3">Accessibilità</th>
                 <th className="px-4 py-3">Stato</th>
+                <th className="w-12 rounded-tr-2xl px-2 py-3" aria-label="Azioni" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-berry/5">
+            <tbody className="divide-y divide-black/[0.04]">
               {(locations ?? []).map((l) => {
                 const st = l.effective_status ?? l.visit_status;
                 return (
-                  <tr key={l.id} className="transition hover:bg-tint/50">
+                  <tr key={l.id} className="transition duration-150 hover:bg-surface/60">
                     <td className="px-4 py-2">
                       <Link href={`/locations/${l.id}`} className="block" tabIndex={-1} aria-hidden>
                         <RowThumb loc={l} />
@@ -209,6 +271,15 @@ export default function LocationsPage() {
                     <td className="px-4 py-3">
                       <Badge className={EFFECTIVE_STATUS_CLASSES[st]}>{EFFECTIVE_STATUS_LABELS[st]}</Badge>
                     </td>
+                    <td className="px-2 py-3 text-right">
+                      <RowMenu
+                        loc={l}
+                        onDelete={() => {
+                          setDeleting(l);
+                          del.open();
+                        }}
+                      />
+                    </td>
                   </tr>
                 );
               })}
@@ -216,6 +287,19 @@ export default function LocationsPage() {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        {...del.dialogProps}
+        title="Eliminare la location?"
+        message={
+          deleting ? (
+            <>
+              <span className="font-semibold text-ink">{deleting.name}</span> e i suoi dati (spazi, media,
+              listini) verranno eliminati definitivamente.
+            </>
+          ) : undefined
+        }
+      />
     </div>
   );
 }

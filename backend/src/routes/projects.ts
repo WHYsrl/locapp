@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { notFound } from '../lib/errors.js';
+import { conflict, notFound } from '../lib/errors.js';
 import { paginated, parsePagination } from '../lib/pagination.js';
 import { rowToApi, rowsToApi } from '../lib/apiMappers.js';
 import { buildFeatureCollection } from '../lib/geojson.js';
@@ -80,8 +80,25 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     return rowToApi(row);
   });
 
+  // Soft delete: 409 PROJECT_HAS_EVENTS when the project still contains events;
+  // ?force=true hard-deletes the events first (shortlists, visits, quotes and
+  // availability cascade at DB level) then soft-deletes the project.
   app.delete('/projects/:id', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
+    const { force } = z.object({ force: z.coerce.boolean().optional() }).parse(req.query);
+    const project = await repos.projects.getById(id);
+    if (!project) throw notFound('Project');
+    const eventRows = await repos.projects.listEvents(id);
+    if (eventRows.length > 0) {
+      if (!force) {
+        throw conflict(
+          'PROJECT_HAS_EVENTS',
+          `Il progetto contiene ${eventRows.length} eventi: ${eventRows.map((e) => e.name).join(', ')}. Ripetere con force=true per eliminarli`,
+          { events: eventRows.map((e) => ({ id: e.id, name: e.name })) },
+        );
+      }
+      await repos.projects.deleteEventsForProject(id);
+    }
     const ok = await repos.projects.softDelete(id);
     if (!ok) throw notFound('Project');
     reply.status(204);

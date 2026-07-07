@@ -879,6 +879,82 @@ struct EventLocation: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+// MARK: - Points of interest (GET /locations/:id/poi-distances, POST /pois)
+
+enum PoiKind: String, Codable, Sendable, CaseIterable, Hashable {
+    case hotel
+    case aeroporto
+    case stazione
+    case monumento
+    case altro
+
+    var label: String { rawValue.capitalized }
+
+    var systemImage: String {
+        switch self {
+        case .hotel: "bed.double"
+        case .aeroporto: "airplane"
+        case .stazione: "tram"
+        case .monumento: "building.columns"
+        case .altro: "mappin"
+        }
+    }
+}
+
+struct Poi: Codable, Hashable, Sendable, Identifiable {
+    var id: String
+    var name: String
+    var kind: PoiKind?
+    var city: String?
+    var lat: Double?
+    var lng: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case kind
+        case city
+        case lat
+        case lng
+    }
+}
+
+/// One row of `GET /locations/:id/poi-distances`:
+/// `{poi:{...}, km, minutes_car, estimated?}`.
+struct PoiDistance: Codable, Hashable, Sendable, Identifiable {
+    var poi: Poi
+    var km: Double?
+    var minutesCar: Double?
+    var estimated: Bool?
+
+    var id: String { poi.id }
+
+    enum CodingKeys: String, CodingKey {
+        case poi
+        case km
+        case minutesCar = "minutes_car"
+        case estimated
+    }
+}
+
+/// One candidate from `GET /geocode` (`{display_name, lat, lon}`;
+/// coordinates may arrive as numeric strings, Nominatim-style).
+struct GeocodeCandidate: Codable, Hashable, Sendable, Identifiable {
+    var displayName: String
+    var lat: Double?
+    var lon: Double?
+
+    var id: String {
+        displayName + "/" + String(lat ?? 0) + "/" + String(lon ?? 0)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case lat
+        case lon
+    }
+}
+
 // MARK: - Search (POST /search/brief)
 
 struct DistanceInfo: Codable, Hashable, Sendable {
@@ -1572,6 +1648,47 @@ extension EventLocation {
                 location = nil
             }
         }
+    }
+}
+
+// MARK: Points of interest
+
+extension Poi {
+    /// Fallback geometry keys (some backends expose `lon` instead of `lng`).
+    private enum AltGeoKeys: String, CodingKey {
+        case lon
+        case longitude
+        case latitude
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = (try? c.decode(String.self, forKey: .name)) ?? "POI"
+        kind = try? c.decodeIfPresent(PoiKind.self, forKey: .kind)
+        city = try? c.decodeIfPresent(String.self, forKey: .city)
+        let alt = try decoder.container(keyedBy: AltGeoKeys.self)
+        lat = c.lossyDouble(.lat) ?? alt.lossyDouble(.latitude)
+        lng = c.lossyDouble(.lng) ?? alt.lossyDouble(.lon) ?? alt.lossyDouble(.longitude)
+    }
+}
+
+extension PoiDistance {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        poi = try c.decode(Poi.self, forKey: .poi)
+        km = c.lossyDouble(.km)
+        minutesCar = c.lossyDouble(.minutesCar)
+        estimated = c.lossyBool(.estimated)
+    }
+}
+
+extension GeocodeCandidate {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        displayName = (try? c.decode(String.self, forKey: .displayName)) ?? "Risultato"
+        lat = c.lossyDouble(.lat)
+        lon = c.lossyDouble(.lon)
     }
 }
 

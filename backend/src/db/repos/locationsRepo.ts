@@ -154,6 +154,33 @@ export function createLocationsRepo(db: Db) {
       return rows.length > 0;
     },
 
+    /** Non-deleted child locations (delete-rule check). */
+    async listChildren(parentId: string) {
+      return db
+        .select({ id: locations.id, name: locations.name })
+        .from(locations)
+        .where(and(eq(locations.parentLocationId, parentId), isNull(locations.deletedAt)));
+    },
+
+    /** Detaches all children (parent_location_id = null); returns how many were detached. */
+    async detachChildren(parentId: string) {
+      const rows = await db
+        .update(locations)
+        .set({ parentLocationId: null, updatedAt: new Date() })
+        .where(eq(locations.parentLocationId, parentId))
+        .returning({ id: locations.id });
+      return rows.length;
+    },
+
+    /** Deletes every shortlist reference (visits/quotes/availability cascade at DB level). */
+    async removeShortlistReferences(locationId: string) {
+      const rows = await db
+        .delete(eventLocations)
+        .where(eq(eventLocations.locationId, locationId))
+        .returning({ id: eventLocations.id });
+      return rows.length;
+    },
+
     async usage(locationId: string) {
       return db
         .select({

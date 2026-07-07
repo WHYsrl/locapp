@@ -49,31 +49,31 @@ export default function CollapsibleSection({
   };
 
   return (
-    <section className={`rounded-xl border border-berry/10 bg-white shadow-sm ${className}`}>
+    <section className={`rounded-2xl border border-hairline bg-white shadow-soft ${className}`}>
       <div className="flex items-center justify-between gap-3 px-5 py-4">
         <button
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+          className="group flex min-w-0 flex-1 items-center gap-2.5 text-left"
         >
           <span
-            className={`inline-block text-xs text-berry/60 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+            className={`inline-block text-[10px] text-ink/35 transition-transform duration-200 group-hover:text-berry ${open ? "rotate-90" : ""}`}
             aria-hidden
           >
             ▶
           </span>
-          <h2 className="min-w-0 text-sm font-bold uppercase tracking-wide text-berry">{title}</h2>
+          <h2 className="min-w-0 text-[15px] font-semibold tracking-tight text-ink">{title}</h2>
         </button>
         {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
       </div>
       <div
-        className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${
+        className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         }`}
       >
         <div className="overflow-hidden">
-          <div className="px-5 pb-5">{children}</div>
+          <div className="border-t border-hairline px-5 pb-5 pt-4">{children}</div>
         </div>
       </div>
     </section>

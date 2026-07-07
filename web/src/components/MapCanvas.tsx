@@ -97,5 +97,5 @@ export default function MapCanvas({
     return () => instances.forEach((m) => m.remove());
   }, [markers]);
 
-  return <div ref={containerRef} style={{ height }} className={`w-full overflow-hidden rounded-xl border border-berry/10 ${className}`} />;
+  return <div ref={containerRef} style={{ height }} className={`w-full overflow-hidden rounded-2xl border border-hairline shadow-soft ${className}`} />;
 }

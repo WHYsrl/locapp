@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { badRequest } from '../lib/errors.js';
 import { geocodeAddress, geocodeBestWith, googleMapsUrl } from '../lib/geocode.js';
+import { withGoogleGeocode } from '../lib/googlemaps.js';
 
 const GeocodeQuery = z.object({
   q: z.string().min(1).optional(),
@@ -14,7 +15,12 @@ const GeocodeQuery = z.object({
 
 export async function geocodeRoutes(app: FastifyInstance): Promise<void> {
   // Deps may inject a geocoder (tests do); production falls back to OSM Nominatim.
-  const geocode = app.deps.geocode ?? geocodeAddress;
+  // With GOOGLE_MAPS_API_KEY set, Google Geocoding is preferred per query;
+  // empty/error results fall through to the Nominatim variants unchanged.
+  const baseGeocode = app.deps.geocode ?? geocodeAddress;
+  const geocode = app.deps.googleMapsApiKey
+    ? withGoogleGeocode(app.deps.googleMapsApiKey, baseGeocode, app.deps.fetchFn)
+    : baseGeocode;
 
   app.get('/geocode', async (req) => {
     const query = GeocodeQuery.parse(req.query);

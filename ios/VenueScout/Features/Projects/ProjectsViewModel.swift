@@ -1,6 +1,15 @@
 import Foundation
 import Observation
 
+/// Outcome of a DELETE that the server may refuse with 409 Conflict
+/// (LOCATION_IN_USE / HAS_CHILDREN / PROJECT_HAS_EVENTS): the UI shows the
+/// message and offers a destructive "Elimina comunque" retry with force=true.
+enum DeleteResult: Sendable, Equatable {
+    case deleted
+    case conflict(message: String)
+    case failed
+}
+
 /// View model for projects, project detail and event shortlists.
 @MainActor
 @Observable
@@ -34,6 +43,19 @@ final class ProjectsViewModel {
             projects.insert(project, at: 0)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteProject(_ project: Project, force: Bool = false) async -> DeleteResult {
+        do {
+            try await APIClient.shared.deleteProject(id: project.id, force: force)
+            projects.removeAll { $0.id == project.id }
+            return .deleted
+        } catch let error as APIError where error.isConflict {
+            return .conflict(message: error.serverMessage ?? "Il progetto contiene eventi.")
+        } catch {
+            errorMessage = error.localizedDescription
+            return .failed
         }
     }
 }

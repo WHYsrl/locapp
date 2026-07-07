@@ -94,6 +94,14 @@ export function createProjectsRepo(db: Db) {
       const rows = await db.delete(events).where(eq(events.id, id)).returning({ id: events.id });
       return rows.length > 0;
     },
+    /** Hard-deletes all project events (event_locations + visits/quotes/availability cascade). */
+    async deleteEventsForProject(projectId: string) {
+      const rows = await db
+        .delete(events)
+        .where(eq(events.projectId, projectId))
+        .returning({ id: events.id });
+      return rows.length;
+    },
 
     // ---- shortlist (event_locations) ----
     async listEventLocations(eventId: string) {

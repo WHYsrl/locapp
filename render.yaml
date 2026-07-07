@@ -31,6 +31,12 @@ services:
         sync: false
       - key: S3_SECRET_ACCESS_KEY
         sync: false
+      - key: GOOGLE_CLIENT_IDS # comma-separated: web + iOS OAuth client IDs
+        sync: false
+      - key: GOOGLE_ALLOWED_DOMAINS # comma-separated email domains auto-provisioned via SSO
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY # unset → OSM/haversine fallbacks
+        sync: false
       - key: NODE_VERSION
         value: "22"
 
@@ -47,5 +53,9 @@ services:
           type: web
           name: venuescout-api
           envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID # web OAuth client ID (Google Sign-In button)
+        sync: false
+      - key: NEXT_PUBLIC_GOOGLE_MAPS_KEY # browser Maps key (referrer-restricted)
+        sync: false
       - key: NODE_VERSION
         value: "22"

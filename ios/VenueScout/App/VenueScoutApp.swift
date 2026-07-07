@@ -5,6 +5,7 @@ struct VenueScoutApp: App {
     var body: some Scene {
         WindowGroup {
             RootTabView()
+                .tint(.berry)
                 .task {
                     // Best-effort resend of offline captures on launch.
                     _ = await OutboxStore.shared.flush()

@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { notFound } from '../lib/errors.js';
+import { conflict, notFound } from '../lib/errors.js';
 import { paginated, parsePagination } from '../lib/pagination.js';
 import { rowToApi, rowsToApi } from '../lib/apiMappers.js';
 import { buildHistoryTimeline, deriveUsage, resolveEffective, withGeo } from '../lib/serializers.js';
 import { registerTags } from '../lib/tagService.js';
 import { renderMapThumb } from '../lib/staticmap.js';
+import { fetchGoogleStaticMap } from '../lib/googlemaps.js';
 import type { CapacityConfiguration, VisitStatus } from '../db/schema.js';
 
 const IdParams = z.object({ id: z.string() });
@@ -119,8 +120,18 @@ export async function locationRoutes(app: FastifyInstance): Promise<void> {
     const cacheKey = `${id}:${coord.lon}:${coord.lat}`;
     let png = thumbCache.get(cacheKey);
     if (!png) {
-      const render = app.deps.renderMapThumb ?? renderMapThumb;
-      png = await render(coord.lat, coord.lon);
+      // With GOOGLE_MAPS_API_KEY set the thumbnail is proxied from the Maps
+      // Static API (key stays server-side); otherwise (or on Google failure)
+      // it is stitched from OSM raster tiles as before.
+      if (app.deps.googleMapsApiKey) {
+        png =
+          (await fetchGoogleStaticMap(coord.lat, coord.lon, app.deps.googleMapsApiKey, app.deps.fetchFn)) ??
+          undefined;
+      }
+      if (!png) {
+        const render = app.deps.renderMapThumb ?? renderMapThumb;
+        png = await render(coord.lat, coord.lon);
+      }
       if (thumbCache.size >= THUMB_CACHE_MAX) {
         thumbCache.delete(thumbCache.keys().next().value!);
       }
@@ -223,8 +234,45 @@ export async function locationRoutes(app: FastifyInstance): Promise<void> {
     return rowToApi(row);
   });
 
+  // Soft delete with clear rules: 409 LOCATION_IN_USE when referenced by any
+  // shortlist (event_locations), 409 HAS_CHILDREN when it has child venues.
+  // ?force=true removes the shortlist references and detaches the children
+  // (parent_location_id = null) before soft-deleting.
   app.delete('/locations/:id', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
+    const { force } = z.object({ force: z.coerce.boolean().optional() }).parse(req.query);
+    const location = await repos.locations.getById(id);
+    if (!location) throw notFound('Location');
+
+    const [usageRows, children] = await Promise.all([
+      repos.locations.usage(id),
+      repos.locations.listChildren(id),
+    ]);
+    if (!force) {
+      if (usageRows.length > 0) {
+        const references = usageRows.map((u) => ({
+          project: u.projectName,
+          event: u.eventName,
+          status: u.status,
+        }));
+        const names = [...new Set(usageRows.map((u) => `${u.projectName} / ${u.eventName}`))];
+        throw conflict(
+          'LOCATION_IN_USE',
+          `Location usata in: ${names.join(', ')}. Rimuoverla dalle shortlist o ripetere con force=true`,
+          { references },
+        );
+      }
+      if (children.length > 0) {
+        throw conflict(
+          'HAS_CHILDREN',
+          `La location ha ${children.length} location figlie: ripetere con force=true per scollegarle`,
+          { children: children.map((c) => ({ id: c.id, name: c.name })) },
+        );
+      }
+    } else {
+      if (usageRows.length > 0) await repos.locations.removeShortlistReferences(id);
+      if (children.length > 0) await repos.locations.detachChildren(id);
+    }
     const ok = await repos.locations.softDelete(id);
     if (!ok) throw notFound('Location');
     reply.status(204);

@@ -141,7 +141,7 @@ function TagRow({
   const totalUsage = usage.inLocations + usage.inProjects;
 
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-berry/10 bg-white px-5 py-3.5 shadow-sm">
+    <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-hairline bg-white px-5 py-3.5 shadow-soft">
       <span
         className="inline-flex items-center whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium"
         style={{ backgroundColor: `${color}14`, borderColor: `${color}55`, color }}

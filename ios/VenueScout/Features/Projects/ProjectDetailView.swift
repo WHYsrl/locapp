@@ -6,6 +6,8 @@ struct ProjectDetailView: View {
 
     @State private var project: Project?
     @State private var errorMessage: String?
+    @State private var eventToDelete: Event?
+    @State private var deleteErrorMessage: String?
 
     init(projectId: String, preloaded: Project? = nil) {
         self.projectId = projectId
@@ -33,6 +35,33 @@ struct ProjectDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: Event.self) { event in
             EventDetailView(event: event)
+        }
+        .confirmationDialog(
+            "Eliminare l'evento?",
+            isPresented: Binding(
+                get: { eventToDelete != nil },
+                set: { if !$0 { eventToDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: eventToDelete
+        ) { event in
+            Button("Elimina \"\(event.name)\"", role: .destructive) {
+                Task { await deleteEvent(event) }
+            }
+            Button("Annulla", role: .cancel) {}
+        } message: { _ in
+            Text("Verranno rimossi anche shortlist e sopralluoghi collegati.")
+        }
+        .alert(
+            "Errore",
+            isPresented: Binding(
+                get: { deleteErrorMessage != nil },
+                set: { if !$0 { deleteErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteErrorMessage ?? "")
         }
         .task {
             do {
@@ -112,11 +141,34 @@ struct ProjectDetailView: View {
                     }
                     .padding(.vertical, 2)
                 }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        eventToDelete = event
+                    } label: {
+                        Label("Elimina", systemImage: "trash")
+                    }
+                }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        eventToDelete = event
+                    } label: {
+                        Label("Elimina evento", systemImage: "trash")
+                    }
+                }
             }
             if (project.events ?? []).isEmpty {
                 Text("Nessun evento in questo progetto.")
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private func deleteEvent(_ event: Event) async {
+        do {
+            try await APIClient.shared.deleteEvent(id: event.id)
+            project?.events?.removeAll { $0.id == event.id }
+        } catch {
+            deleteErrorMessage = error.localizedDescription
         }
     }
 }

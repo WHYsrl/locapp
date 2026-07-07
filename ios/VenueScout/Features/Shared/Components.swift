@@ -2,6 +2,12 @@ import SwiftUI
 
 // MARK: - Small reusable UI pieces (Italian labels live in callers)
 
+extension Color {
+    /// App accent, berry #6D2E46 — applied via `.tint` at the app root
+    /// (no asset catalog is committed, see Resources/ASSETS.md).
+    static let berry = Color(red: 109 / 255, green: 46 / 255, blue: 70 / 255)
+}
+
 /// Rounded tag chip.
 struct TagChip: View {
     let text: String

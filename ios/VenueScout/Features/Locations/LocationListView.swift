@@ -3,6 +3,9 @@ import SwiftUI
 /// Archive of locations with search and filters (stato / tag).
 struct LocationListView: View {
     @State private var viewModel: LocationsViewModel
+    @State private var locationToDelete: Location?
+    @State private var conflictLocation: Location?
+    @State private var conflictMessage = ""
 
     init(viewModel: LocationsViewModel = LocationsViewModel()) {
         _viewModel = State(initialValue: viewModel)
@@ -21,9 +24,56 @@ struct LocationListView: View {
                 NavigationLink(value: location) {
                     LocationRow(location: location)
                 }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        locationToDelete = location
+                    } label: {
+                        Label("Elimina", systemImage: "trash")
+                    }
+                }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        locationToDelete = location
+                    } label: {
+                        Label("Elimina location", systemImage: "trash")
+                    }
+                }
             }
         }
         .navigationTitle("Location")
+        .navigationBarTitleDisplayMode(.large)
+        .confirmationDialog(
+            "Eliminare la location?",
+            isPresented: Binding(
+                get: { locationToDelete != nil },
+                set: { if !$0 { locationToDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: locationToDelete
+        ) { location in
+            Button("Elimina \"\(location.name)\"", role: .destructive) {
+                Task { await delete(location, force: false) }
+            }
+            Button("Annulla", role: .cancel) {}
+        } message: { _ in
+            Text("L'operazione non è reversibile.")
+        }
+        .confirmationDialog(
+            "Impossibile eliminare",
+            isPresented: Binding(
+                get: { conflictLocation != nil },
+                set: { if !$0 { conflictLocation = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: conflictLocation
+        ) { location in
+            Button("Elimina comunque", role: .destructive) {
+                Task { await delete(location, force: true) }
+            }
+            Button("Annulla", role: .cancel) {}
+        } message: { _ in
+            Text(conflictMessage)
+        }
         .navigationDestination(for: Location.self) { location in
             LocationDetailView(locationId: location.id, preloaded: location)
         }
@@ -54,6 +104,13 @@ struct LocationListView: View {
         }
         .refreshable {
             await viewModel.load()
+        }
+    }
+
+    private func delete(_ location: Location, force: Bool) async {
+        if case .conflict(let message) = await viewModel.deleteLocation(location, force: force) {
+            conflictMessage = message
+            conflictLocation = location
         }
     }
 

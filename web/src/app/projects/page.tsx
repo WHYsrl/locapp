@@ -49,11 +49,11 @@ export default function ProjectsPage() {
             <Link
               key={p.id}
               href={`/projects/${p.id}`}
-              className="rounded-xl border border-berry/10 bg-white p-5 shadow-sm transition hover:border-berry/30 hover:shadow"
+              className="rounded-2xl border border-hairline bg-white p-5 shadow-soft transition duration-200 hover:border-berry/25 hover:shadow-md"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-bold text-berry">{p.name}</h2>
+                  <h2 className="text-lg font-semibold tracking-tight text-berry">{p.name}</h2>
                   <p className="text-sm text-ink/60">{p.client_name ?? "—"}</p>
                 </div>
                 <Badge className={PROJECT_STATUS_CLASSES[p.status]}>{PROJECT_STATUS_LABELS[p.status]}</Badge>

@@ -8,11 +8,18 @@ import SwiftUI
 struct LocationDetailView: View {
     let locationId: String
 
+    @Environment(\.dismiss) private var dismiss
+
     @State private var location: Location?
     @State private var usage: [UsageEntry] = []
     @State private var history: [HistoryEntry] = []
+    @State private var poiDistances: [PoiDistance] = []
     @State private var errorMessage: String?
     @State private var showTagEditor = false
+    @State private var showAddPoi = false
+    @State private var showDeleteConfirm = false
+    @State private var deleteConflictMessage: String?
+    @State private var deleteErrorMessage: String?
 
     init(locationId: String, preloaded: Location? = nil) {
         self.locationId = locationId
@@ -35,6 +42,64 @@ struct LocationDetailView: View {
         }
         .navigationTitle(location?.name ?? "Location")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("Elimina location", systemImage: "trash")
+                    }
+                } label: {
+                    Label("Altre azioni", systemImage: "ellipsis.circle")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Eliminare la location?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Elimina", role: .destructive) {
+                Task { await deleteLocation(force: false) }
+            }
+            Button("Annulla", role: .cancel) {}
+        } message: {
+            Text("L'operazione non è reversibile.")
+        }
+        .confirmationDialog(
+            "Impossibile eliminare",
+            isPresented: Binding(
+                get: { deleteConflictMessage != nil },
+                set: { if !$0 { deleteConflictMessage = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Elimina comunque", role: .destructive) {
+                Task { await deleteLocation(force: true) }
+            }
+            Button("Annulla", role: .cancel) {}
+        } message: {
+            Text(deleteConflictMessage ?? "")
+        }
+        .alert(
+            "Errore",
+            isPresented: Binding(
+                get: { deleteErrorMessage != nil },
+                set: { if !$0 { deleteErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteErrorMessage ?? "")
+        }
+        .sheet(isPresented: $showAddPoi) {
+            NavigationStack {
+                AddPoiView(defaultCity: location?.city) {
+                    Task { await loadPoiDistances() }
+                }
+            }
+        }
         .sheet(isPresented: $showTagEditor) {
             if let location {
                 NavigationStack {
@@ -57,13 +122,31 @@ struct LocationDetailView: View {
             async let detailCall = APIClient.shared.getLocation(id: locationId)
             async let usageCall = APIClient.shared.locationUsage(id: locationId)
             async let historyCall = APIClient.shared.locationHistory(id: locationId)
+            async let poiCall = APIClient.shared.poiDistances(locationId: locationId)
             location = try await detailCall
             usage = (try? await usageCall) ?? usage
             history = (try? await historyCall) ?? history
+            poiDistances = (try? await poiCall) ?? poiDistances
         } catch {
             if location == nil {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func loadPoiDistances() async {
+        poiDistances = (try? await APIClient.shared.poiDistances(locationId: locationId)) ?? poiDistances
+    }
+
+    private func deleteLocation(force: Bool) async {
+        do {
+            try await APIClient.shared.deleteLocation(id: locationId, force: force)
+            dismiss()
+        } catch let error as APIError where error.isConflict {
+            deleteConflictMessage = error.serverMessage
+                ?? "La location è in uso o ha location collegate."
+        } catch {
+            deleteErrorMessage = error.localizedDescription
         }
     }
 
@@ -79,10 +162,63 @@ struct LocationDetailView: View {
             partySection(location)
             suppliersSection(location)
             contactsSection(location)
+            poiSection
             childrenSection(location)
             usageSection
             historySection
         }
+    }
+
+    /// POI distances (GET /locations/:id/poi-distances) + "Aggiungi POI".
+    private var poiSection: some View {
+        CollapsibleSection("Punti di interesse", key: "poi") {
+            ForEach(poiDistances) { entry in
+                HStack(spacing: 10) {
+                    Image(systemName: (entry.poi.kind ?? .altro).systemImage)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.poi.name)
+                            .font(.subheadline)
+                        if let city = entry.poi.city {
+                            Text(city)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Text(distanceText(entry))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
+                .padding(.vertical, 2)
+            }
+            if poiDistances.isEmpty {
+                Text("Nessun punto di interesse.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Button {
+                showAddPoi = true
+            } label: {
+                Label("Aggiungi POI", systemImage: "plus.circle")
+            }
+        }
+    }
+
+    /// "X km — Y min in auto", with "~" when the backend marks it estimated.
+    private func distanceText(_ entry: PoiDistance) -> String {
+        var parts: [String] = []
+        if let km = entry.km {
+            parts.append(String(format: "%.1f km", km))
+        }
+        if let minutes = entry.minutesCar {
+            parts.append("\(Int(minutes.rounded())) min in auto")
+        }
+        guard !parts.isEmpty else { return "—" }
+        let text = parts.joined(separator: " — ")
+        return entry.estimated == true ? "~" + text : text
     }
 
     private func overviewSection(_ location: Location) -> some View {

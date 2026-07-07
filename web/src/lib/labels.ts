@@ -5,6 +5,7 @@ import type {
   EventLocationStatus,
   MediaCategory,
   MediaKind,
+  PoiKind,
   ProjectStatus,
   QuoteStatus,
 } from "./types";
@@ -114,6 +115,32 @@ export const PROJECT_STATUS_CLASSES: Record<ProjectStatus, string> = {
   attivo: "bg-emerald-100 text-emerald-800 border-emerald-200",
   chiuso: "bg-gray-100 text-gray-700 border-gray-200",
   archiviato: "bg-gray-100 text-gray-500 border-gray-200",
+};
+
+export const POI_KINDS: PoiKind[] = ["hotel", "aeroporto", "stazione", "monumento", "altro"];
+
+export const POI_KIND_LABELS: Record<PoiKind, string> = {
+  hotel: "Hotel",
+  aeroporto: "Aeroporto",
+  stazione: "Stazione",
+  monumento: "Monumento",
+  altro: "Altro",
+};
+
+export const POI_KIND_ICONS: Record<PoiKind, string> = {
+  hotel: "🏨",
+  aeroporto: "✈️",
+  stazione: "🚉",
+  monumento: "🏛️",
+  altro: "📍",
+};
+
+export const POI_KIND_CLASSES: Record<PoiKind, string> = {
+  hotel: "bg-violet-100 text-violet-800 border-violet-200",
+  aeroporto: "bg-sky-100 text-sky-800 border-sky-200",
+  stazione: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  monumento: "bg-gold/15 text-yellow-800 border-gold/30",
+  altro: "bg-gray-100 text-gray-700 border-gray-200",
 };
 
 export const MEDIA_KINDS: MediaKind[] = ["foto", "video", "planimetria", "documento", "listino"];

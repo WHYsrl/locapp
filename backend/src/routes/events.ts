@@ -97,6 +97,8 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
     return rowToApi(row);
   });
 
+  // Hard delete: event_locations and their visits/quotes/availability cascade
+  // at DB level (0000_init.sql ON DELETE CASCADE chain).
   app.delete('/events/:id', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
     const ok = await repos.projects.deleteEvent(id);

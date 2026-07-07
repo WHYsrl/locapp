@@ -34,6 +34,14 @@ export interface AppDeps {
   geocode?: GeocodeFn;
   /** Optional map thumbnail renderer override (tests); defaults to OSM tiles + sharp. */
   renderMapThumb?: MapThumbRenderer;
+  /** Google OAuth client IDs accepted by POST /auth/google. Empty/unset → 503 sso_not_configured. */
+  googleClientIds?: string[];
+  /** Email domains allowed to auto-provision users via Google SSO (role: editor). */
+  googleAllowedDomains?: string[];
+  /** Google Maps Platform key; unset → OSM/haversine fallbacks (no behavior change). */
+  googleMapsApiKey?: string;
+  /** Injectable fetch for outbound HTTP (Google tokeninfo/Maps); defaults to global fetch. */
+  fetchFn?: typeof fetch;
 }
 
 declare module 'fastify' {
@@ -67,7 +75,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply.status(400).send({ error: { code: 'VALIDATION_ERROR', message } });
     }
     if (err instanceof HttpError) {
-      return reply.status(err.statusCode).send({ error: { code: err.code, message: err.message } });
+      return reply.status(err.statusCode).send({
+        error: {
+          code: err.code,
+          message: err.message,
+          ...(err.details !== undefined ? { details: err.details } : {}),
+        },
+      });
     }
     const e = err as { statusCode?: unknown; code?: unknown; message?: unknown };
     const status = typeof e.statusCode === 'number' ? e.statusCode : 500;

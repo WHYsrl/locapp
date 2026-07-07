@@ -33,7 +33,10 @@ export default function DashboardPage() {
         title="Dashboard"
         subtitle="Panoramica di location e progetti"
         action={
-          <Link href="/locations/new" className="rounded-lg bg-berry px-4 py-2 text-sm font-semibold text-white hover:bg-berry-dark">
+          <Link
+            href="/locations/new"
+            className="inline-flex items-center gap-2 rounded-full bg-berry px-5 py-2 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-berry-dark"
+          >
             + Nuova location
           </Link>
         }
@@ -105,8 +108,8 @@ export default function DashboardPage() {
 
 function StatCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-berry/10 bg-white p-4 shadow-sm">
-      <p className="text-2xl font-bold text-berry">{value}</p>
+    <div className="rounded-2xl border border-hairline bg-white p-4 shadow-soft">
+      <p className="text-2xl font-semibold tracking-tight text-berry">{value}</p>
       <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-ink/50">{label}</p>
     </div>
   );

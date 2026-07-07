@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import GeocodeSuggest from "@/components/GeocodeSuggest";
@@ -12,7 +12,10 @@ import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
 import AddSupplierDialog from "@/components/AddSupplierDialog";
 import AddContactDialog from "@/components/AddContactDialog";
 import MediaSection from "@/components/MediaSection";
-import { Badge, Card, EmptyState, Spinner, Stars, btnPrimary, btnSecondary } from "@/components/ui";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import PoiDialog from "@/components/PoiDialog";
+import { useDeleteFlow } from "@/lib/useDeleteFlow";
+import { Badge, Card, EmptyState, Spinner, Stars, btnChip, btnPrimary, btnSecondary } from "@/components/ui";
 import {
   CONFIGURATIONS,
   CONFIG_LABELS,
@@ -20,6 +23,8 @@ import {
   EFFECTIVE_STATUS_LABELS,
   EL_STATUS_CLASSES,
   EL_STATUS_LABELS,
+  POI_KIND_ICONS,
+  POI_KIND_LABELS,
   formatDate,
   formatDateTime,
   formatMoney,
@@ -41,11 +46,13 @@ export default function LocationDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const qc = useQueryClient();
+  const router = useRouter();
 
   const [editingTags, setEditingTags] = useState(false);
   const [draftTags, setDraftTags] = useState<string[]>([]);
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
+  const [poiDialogOpen, setPoiDialogOpen] = useState(false);
 
   const tagColors = useTagColors();
 
@@ -63,6 +70,20 @@ export default function LocationDetailPage() {
     queryKey: ["location-history", id],
     queryFn: () => api.getLocationHistory(id),
     enabled: !!id,
+  });
+  const { data: poiDistances, isLoading: poiDistancesLoading } = useQuery({
+    queryKey: ["poi-distances", id],
+    queryFn: () => api.getPoiDistances(id),
+    enabled: !!id,
+  });
+
+  const deleteFlow = useDeleteFlow({
+    doDelete: (force) => api.deleteLocation(id, force),
+    onDeleted: () => {
+      qc.invalidateQueries({ queryKey: ["locations"] });
+      qc.removeQueries({ queryKey: ["location", id] });
+      router.push("/locations");
+    },
   });
 
   const saveTags = useMutation({
@@ -148,7 +169,7 @@ export default function LocationDetailPage() {
       </nav>
 
       {/* hero: cover a sinistra, pannello info compatto a destra */}
-      <div className="mb-6 overflow-hidden rounded-xl border border-berry/10 bg-white shadow-sm">
+      <div className="mb-6 overflow-hidden rounded-2xl border border-hairline bg-white shadow-soft">
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
           <HeroCover loc={loc} />
 
@@ -156,7 +177,7 @@ export default function LocationDetailPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-2xl font-bold text-ink">{loc.name}</h1>
+                  <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-ink">{loc.name}</h1>
                   <Badge className={EFFECTIVE_STATUS_CLASSES[st]}>{EFFECTIVE_STATUS_LABELS[st]}</Badge>
                 </div>
                 <p className="mt-1 text-sm text-ink/60">
@@ -176,12 +197,17 @@ export default function LocationDetailPage() {
                 </p>
                 {loc.parent && <p className="mt-0.5 text-xs text-ink/40">interna a {loc.parent.name}</p>}
               </div>
-              <Link
-                href={`/locations/${loc.id}/edit`}
-                className="shrink-0 rounded-lg border border-berry/25 bg-white px-4 py-2 text-sm font-semibold text-berry hover:bg-berry/5"
-              >
-                Modifica scheda
-              </Link>
+              <div className="flex shrink-0 items-center gap-2">
+                <Link href={`/locations/${loc.id}/edit`} className={btnSecondary}>
+                  Modifica scheda
+                </Link>
+                <button
+                  className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition duration-150 hover:bg-red-50"
+                  onClick={deleteFlow.open}
+                >
+                  Elimina location
+                </button>
+              </div>
             </div>
 
             {(phone || email || website) && (
@@ -439,6 +465,54 @@ export default function LocationDetailPage() {
           )}
         </CollapsibleSection>
 
+        {/* POI distances */}
+        <CollapsibleSection
+          storageKey="locdetail:poi"
+          title="Punti di interesse e distanze"
+          action={
+            <button className={btnChip} onClick={() => setPoiDialogOpen(true)}>
+              + Nuovo POI
+            </button>
+          }
+        >
+          {poiDistancesLoading ? (
+            <Spinner label="Calcolo distanze…" />
+          ) : (poiDistances ?? []).length === 0 ? (
+            <EmptyState
+              title="Nessun POI censito"
+              hint={!ll ? "Imposta prima le coordinate della location per calcolare le distanze." : "Crea un punto di interesse per vedere qui le distanze."}
+            />
+          ) : (
+            <ul className="divide-y divide-black/[0.04] text-sm">
+              {(poiDistances ?? []).map((d) => (
+                <li key={d.poi.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="text-base leading-none" title={POI_KIND_LABELS[d.poi.kind]} aria-hidden>
+                      {POI_KIND_ICONS[d.poi.kind]}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-ink">{d.poi.name}</p>
+                      <p className="text-xs text-ink/45">
+                        {[POI_KIND_LABELS[d.poi.kind], d.poi.city].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3 text-ink/70">
+                    <span className="font-medium text-ink">
+                      {d.estimated ? "~" : ""}
+                      {d.km} km
+                    </span>
+                    <span className="rounded-full bg-surface px-2.5 py-0.5 text-xs font-medium">
+                      {d.estimated ? "~" : ""}
+                      {d.minutes_car} min in auto
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CollapsibleSection>
+
         {/* technical */}
         <CollapsibleSection storageKey="locdetail:tecnica" title="Scheda tecnica" defaultOpen>
           {loc.technical ? (
@@ -530,10 +604,7 @@ export default function LocationDetailPage() {
           storageKey="locdetail:fornitori"
           title={`Fornitori (${loc.suppliers.length})`}
           action={
-            <button
-              className="rounded-lg border border-berry/25 bg-white px-2.5 py-1 text-xs font-semibold text-berry transition hover:bg-berry/5"
-              onClick={() => setSupplierOpen(true)}
-            >
+            <button className={btnChip} onClick={() => setSupplierOpen(true)}>
               + Aggiungi fornitore
             </button>
           }
@@ -588,10 +659,7 @@ export default function LocationDetailPage() {
           storageKey="locdetail:referenti"
           title={`Referenti (${loc.contacts.length})`}
           action={
-            <button
-              className="rounded-lg border border-berry/25 bg-white px-2.5 py-1 text-xs font-semibold text-berry transition hover:bg-berry/5"
-              onClick={() => setContactOpen(true)}
-            >
+            <button className={btnChip} onClick={() => setContactOpen(true)}>
               + Aggiungi referente
             </button>
           }
@@ -760,6 +828,21 @@ export default function LocationDetailPage() {
 
       <AddSupplierDialog locationId={id} open={supplierOpen} onClose={() => setSupplierOpen(false)} />
       <AddContactDialog locationId={id} open={contactOpen} onClose={() => setContactOpen(false)} />
+      <PoiDialog
+        open={poiDialogOpen}
+        onClose={() => setPoiDialogOpen(false)}
+        onSaved={() => qc.invalidateQueries({ queryKey: ["poi-distances", id] })}
+      />
+      <ConfirmDialog
+        {...deleteFlow.dialogProps}
+        title="Eliminare la location?"
+        message={
+          <>
+            <span className="font-semibold text-ink">{loc.name}</span> e i suoi dati (spazi, media, listini)
+            verranno eliminati definitivamente.
+          </>
+        }
+      />
     </div>
   );
 }
@@ -849,9 +932,9 @@ function PanelMapThumb({ loc, href, external }: { loc: LocationDetail; href: str
 
 function StatCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="rounded-xl border border-berry/10 bg-white px-4 py-3 shadow-sm">
+    <div className="rounded-2xl border border-hairline bg-white px-4 py-3 shadow-soft">
       <p className="text-xs font-semibold uppercase tracking-wide text-ink/40">{label}</p>
-      <p className="mt-1 text-xl font-bold text-ink">{value}</p>
+      <p className="mt-1 text-xl font-semibold tracking-tight text-ink">{value}</p>
       {sub && <p className="mt-0.5 truncate text-xs text-ink/50" title={sub}>{sub}</p>}
     </div>
   );

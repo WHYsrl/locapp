@@ -113,15 +113,17 @@ Indexes: GiST on `locations.geom`, `pois.geom`; ivfflat/hnsw on `embedding`; trg
 
 ## 4. REST API — `/api/v1` (JSON, JWT Bearer auth)
 
-Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[...],meta:{page,per_page,total}}`.
+Errors: `{error:{code,message,details?}}` (`details` only on structured conflicts, e.g. 409 delete blocks). Pagination: `?page=1&per_page=25` → `{data:[...],meta:{page,per_page,total}}`.
 
 ### Auth
 - `POST /auth/login {email,password}` → `{token,user}`
+- `POST /auth/google {id_token}` → `{token,user}` (same shape as login). Verifies the Google ID token via `https://oauth2.googleapis.com/tokeninfo` (aud ∈ `GOOGLE_CLIENT_IDS`, `email_verified`, expiry). Existing user by `google_sub` or email → linked + logged in; unknown user with email domain in `GOOGLE_ALLOWED_DOMAINS` → auto-created as `editor` (`auth_provider='google'`, unusable random password); otherwise 403 `Utente non autorizzato: contatta l'amministratore`. `GOOGLE_CLIENT_IDS` unset → 503 `sso_not_configured`. Password login is unaffected. (Migration 0003: `users.google_sub` unique, `avatar_url`, `auth_provider` default `'password'`.)
 - `POST /auth/register` (admin only)
 
 ### Locations
 - `GET /locations` — filters: `q, tags, city, visit_status, min_capacity, configuration, accessibility_min, parent_id, root_only=true`
 - `POST /locations` / `GET|PATCH|DELETE /locations/:id`
+  - DELETE: soft delete (`deleted_at`, excluded from all lists/search). 409 `LOCATION_IN_USE` (details: referencing project/event names) when shortlisted in any `event_locations`; 409 `HAS_CHILDREN` when it has child locations. `?force=true` removes the shortlist references and detaches children (`parent_location_id=null`) before soft-deleting.
   - GET returns: base card + `children[]`, `effective_logistics`/`effective_address`/`effective_contact` (inherited), `spaces[]+capacities`, `contacts[]`, `suppliers[]`, `media[]` (with kind/category/filename/mime), `price_lists[]`, `usage_summary`
 - Coordinates: POST/PATCH accept `geom:{lat,lng}`, flat `lat`+`lng`, or legacy `lat`+`lon` (precedence: geom > lat/lng > lat/lon). List and detail responses emit `lon`, `lng` (same value) and `lat` so clients can read either alias.
 - `GET /locations/:id/map-thumb.png` — **public, no auth** (like `/health`): 480x240 PNG composed from OSM raster tiles (zoom 15) with a berry marker centered on the location's geom; in-memory cache (200 entries) + `Cache-Control: public, max-age=86400`; 404 when the location has no geom. When a location has a geom and `thumbnail_url` is null, serializers set `thumbnail_url` to this route.
@@ -145,11 +147,14 @@ Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[
 - `POST /search/brief` `{brief, event_id?, near?: [{poi_id|address, max_minutes?}], limit=10}`
   → `[{location, score:0..100, reasons:{matched[],unmatched[],to_verify[]}, distances:[{poi,km,minutes_car}]}]`
   Implementation: Claude parses brief → structured criteria; SQL prefilter (capacity, tags, geo radius via PostGIS); Claude reranks top-N with explanations; optional pgvector semantic boost.
-- `GET /pois` / `POST /pois`
+- POI CRUD: `GET /pois` (filters `?kind=&q=`, q matches name/city) / `POST /pois` / `PATCH|DELETE /pois/:id` — pois carry `address, city, notes` (migration 0004)
+- `GET /locations/:id/poi-distances` → `{data:[{poi, km, minutes_car, estimated}]}` for ALL pois, nearest first. Google Routes API matrix (1 origin × N destinations, `estimated:false`) when `GOOGLE_MAPS_API_KEY` is set; otherwise haversine with `minutes_car = km/50*60` and `estimated:true` (also the per-POI fallback when Google finds no route). In-memory cache per location (cap 200), invalidated on any POI write.
+- `distances[]` in `/search/brief` results use the same Routes matrix when the key is set, haversine estimate otherwise.
 
 ### Geocoding
 - `GET /geocode?q=...` → `{data: [{display_name, lat, lon, type, importance, google_maps_url}]}` — OSM Nominatim, Italy-only, max 5 candidates; used to propose coordinates + Google Maps link (always user-confirmed)
 - Structured alternative (preferred): `GET /geocode?name=&address=&city=&postal_code=&province=` — tries query variants in order until one returns results: (a) address+postal_code+city, (b) address+city, (c) name+city, (d) name+province; results come from the winning variant only (deduped). Ingestion enrichment uses the same fallback (`geocodeBest`).
+- With `GOOGLE_MAPS_API_KEY` set, each query (interactive + ingestion enrichment) tries the Google Geocoding API first (`region=it&language=it`, same candidate shape) and falls through to Nominatim on empty/error; `map-thumb.png` is then proxied from the Maps Static API (key stays server-side) instead of OSM tile stitching, same cache. Key unset → previous OSM behavior everywhere.
 
 ### Smart tags (shared registry)
 - `GET /tags` — full list, no pagination
@@ -160,6 +165,7 @@ Errors: `{error:{code,message}}`. Pagination: `?page=1&per_page=25` → `{data:[
 
 ### Projects & events
 - CRUD `/projects`, `/projects/:id/events`, `/events/:id` — projects and events carry `tags[]` (smart-tag names)
+- `DELETE /projects/:id`: 409 `PROJECT_HAS_EVENTS` (details: event names) when it still contains events; `?force=true` hard-deletes the events first, then soft-deletes the project. `DELETE /events/:id` hard-deletes; `event_locations` + visits/quotes/availability cascade at DB level.
 - `GET /projects/:id` includes `events[]` with `location_counts by status`
 - Shortlist: `POST /events/:id/locations {location_id}`, `PATCH /event-locations/:id` (status, feedback, notes), `DELETE /event-locations/:id`
 - `GET /events/:id/locations` → shortlist with location summaries, visits, quotes, availability
@@ -209,7 +215,8 @@ venuescout/
 ## 7. Environment
 
 Backend: `DATABASE_URL, ANTHROPIC_API_KEY, JWT_SECRET, S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, PORT`
-Web: `NEXT_PUBLIC_API_URL`, iOS: `APIBaseURL` in Config.
+plus `GOOGLE_CLIENT_IDS` (comma-separated web + iOS OAuth client IDs; unset → `/auth/google` 503), `GOOGLE_ALLOWED_DOMAINS` (comma-separated, optional), `GOOGLE_MAPS_API_KEY` (optional; unset → OSM Nominatim/tiles + haversine fallbacks).
+Web: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_KEY`; iOS: `APIBaseURL` in Config.
 
 ## 8. Conventions
 

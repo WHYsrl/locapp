@@ -10,6 +10,12 @@ const EnvSchema = z.object({
   S3_BUCKET: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Comma-separated Google OAuth client IDs (web + iOS). Unset → /auth/google returns 503. */
+  GOOGLE_CLIENT_IDS: z.string().optional(),
+  /** Comma-separated email domains allowed to auto-provision via Google SSO (e.g. "justwhy.it"). */
+  GOOGLE_ALLOWED_DOMAINS: z.string().optional(),
+  /** Google Maps Platform key. Unset → OSM Nominatim / tile / haversine fallbacks everywhere. */
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
   SKIP_MIGRATE_ON_FAIL: z
     .string()
     .optional()

@@ -7,6 +7,16 @@ enum Config {
     static let apiBaseURLDefaultsKey = "APIBaseURL"
     static let defaultBaseURLString = "https://venuescout-api.onrender.com"
 
+    /// UserDefaults key for the Google OAuth iOS client ID
+    /// (`xxxx.apps.googleusercontent.com`), editable in Impostazioni.
+    /// Empty by default: the "Accedi con Google" button is hidden until set.
+    static let googleIOSClientIDDefaultsKey = "GoogleiOSClientID"
+
+    static var googleIOSClientID: String {
+        UserDefaults.standard.string(forKey: googleIOSClientIDDefaultsKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     static var baseURLString: String {
         let stored = UserDefaults.standard.string(forKey: apiBaseURLDefaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines)

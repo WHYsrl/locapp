@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { badRequest, notFound, notImplemented } from '../lib/errors.js';
 import { rowToApi } from '../lib/apiMappers.js';
 import { processIngestionJob } from '../ingest/process.js';
+import { geocodeAddress } from '../lib/geocode.js';
+import { withGoogleGeocode } from '../lib/googlemaps.js';
 import { applyDraft, type AcceptMap } from '../ingest/apply.js';
 import { importSelectedPhotos } from '../ingest/photos.js';
 import { ExtractedLocationDraftSchema } from '../ai/extraction.js';
@@ -23,6 +25,11 @@ const ApplyBody = z.object({
 
 export async function ingestRoutes(app: FastifyInstance): Promise<void> {
   const { repos, ai, storage } = app.deps;
+  // Enrichment geocoder: Google-first when GOOGLE_MAPS_API_KEY is set, with the
+  // usual Nominatim variant fallback on empty/error results.
+  const enrichGeocode = app.deps.googleMapsApiKey
+    ? withGoogleGeocode(app.deps.googleMapsApiKey, app.deps.geocode ?? geocodeAddress, app.deps.fetchFn)
+    : app.deps.geocode;
 
   app.post('/ingest', async (req, reply) => {
     const body = IngestBody.parse(req.body);
@@ -51,7 +58,7 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     });
 
     // Fire-and-forget async processing; job status is polled via GET /ingest/:jobId.
-    void processIngestionJob(job, repos, ai, app.deps.geocode).catch((err) => app.log.error(err));
+    void processIngestionJob(job, repos, ai, enrichGeocode).catch((err) => app.log.error(err));
 
     reply.status(201);
     return rowToApi(job);

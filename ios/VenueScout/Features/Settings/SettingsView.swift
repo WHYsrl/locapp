@@ -32,6 +32,38 @@ final class SettingsViewModel {
         }
     }
 
+    /// Native Google SSO: OAuth+PKCE via ASWebAuthenticationSession, then
+    /// POST /auth/google. 403 (utente non abilitato) and 503 (SSO non
+    /// configurato) surface the backend message.
+    func loginWithGoogle(coordinator: GoogleSignInCoordinator) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let idToken = try await coordinator.signIn()
+            let response = try await APIClient.shared.loginWithGoogle(idToken: idToken)
+            currentUser = response.user
+            isLoggedIn = true
+            message = "Accesso effettuato come \(response.user.email)."
+        } catch let error as GoogleSignInError {
+            message = error.isCancellation ? nil : error.localizedDescription
+        } catch let error as APIError {
+            if case .http(let status, _, let serverMessage) = error {
+                switch status {
+                case 403:
+                    message = serverMessage ?? "Questo account Google non è abilitato."
+                case 503:
+                    message = serverMessage ?? "Accesso Google non configurato sul server."
+                default:
+                    message = error.localizedDescription
+                }
+            } else {
+                message = error.localizedDescription
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
     func logout() async {
         await APIClient.shared.logout()
         currentUser = nil
@@ -56,7 +88,13 @@ final class SettingsViewModel {
 /// "Impostazioni" tab — API URL, login/logout, offline outbox.
 struct SettingsView: View {
     @State private var viewModel = SettingsViewModel()
+    @State private var googleCoordinator = GoogleSignInCoordinator()
     @AppStorage(Config.apiBaseURLDefaultsKey) private var apiBaseURL = Config.defaultBaseURLString
+    @AppStorage(Config.googleIOSClientIDDefaultsKey) private var googleClientID = ""
+
+    private var trimmedGoogleClientID: String {
+        googleClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
         Form {
@@ -107,7 +145,25 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(viewModel.isWorking)
+                    if !trimmedGoogleClientID.isEmpty {
+                        Button {
+                            Task { await viewModel.loginWithGoogle(coordinator: googleCoordinator) }
+                        } label: {
+                            Label("Accedi con Google", systemImage: "g.circle")
+                        }
+                        .disabled(viewModel.isWorking)
+                    }
                 }
+            }
+
+            Section("Accesso Google (SSO)") {
+                TextField("Client ID iOS (…apps.googleusercontent.com)", text: $googleClientID)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text("Client ID OAuth di tipo iOS della Google Cloud Console. Lo schema URL (client ID invertito) va registrato in project.yml — vedi ios/README.md.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Bozze offline") {
@@ -149,6 +205,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Impostazioni")
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await viewModel.refreshOutbox()
         }

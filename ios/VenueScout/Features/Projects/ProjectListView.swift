@@ -6,6 +6,9 @@ struct ProjectListView: View {
     @State private var showNewProject = false
     @State private var newName = ""
     @State private var newClient = ""
+    @State private var projectToDelete: Project?
+    @State private var conflictProject: Project?
+    @State private var conflictMessage = ""
 
     init(viewModel: ProjectsViewModel = ProjectsViewModel()) {
         _viewModel = State(initialValue: viewModel)
@@ -42,9 +45,56 @@ struct ProjectListView: View {
                     }
                     .padding(.vertical, 2)
                 }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        projectToDelete = project
+                    } label: {
+                        Label("Elimina", systemImage: "trash")
+                    }
+                }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        projectToDelete = project
+                    } label: {
+                        Label("Elimina progetto", systemImage: "trash")
+                    }
+                }
             }
         }
         .navigationTitle("Progetti")
+        .navigationBarTitleDisplayMode(.large)
+        .confirmationDialog(
+            "Eliminare il progetto?",
+            isPresented: Binding(
+                get: { projectToDelete != nil },
+                set: { if !$0 { projectToDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: projectToDelete
+        ) { project in
+            Button("Elimina \"\(project.name)\"", role: .destructive) {
+                Task { await delete(project, force: false) }
+            }
+            Button("Annulla", role: .cancel) {}
+        } message: { _ in
+            Text("L'operazione non è reversibile.")
+        }
+        .confirmationDialog(
+            "Impossibile eliminare",
+            isPresented: Binding(
+                get: { conflictProject != nil },
+                set: { if !$0 { conflictProject = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: conflictProject
+        ) { project in
+            Button("Elimina comunque", role: .destructive) {
+                Task { await delete(project, force: true) }
+            }
+            Button("Annulla", role: .cancel) {}
+        } message: { _ in
+            Text(conflictMessage)
+        }
         .navigationDestination(for: Project.self) { project in
             ProjectDetailView(projectId: project.id, preloaded: project)
         }
@@ -93,6 +143,13 @@ struct ProjectListView: View {
         }
         .refreshable {
             await viewModel.load()
+        }
+    }
+
+    private func delete(_ project: Project, force: Bool) async {
+        if case .conflict(let message) = await viewModel.deleteProject(project, force: force) {
+            conflictMessage = message
+            conflictProject = project
         }
     }
 }

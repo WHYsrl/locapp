@@ -101,6 +101,26 @@ enum APIError: Error, LocalizedError {
         }
         return false
     }
+
+    /// Raw server message and code, regardless of status. Used by delete
+    /// confirmation dialogs (409 LOCATION_IN_USE / HAS_CHILDREN /
+    /// PROJECT_HAS_EVENTS) and by the Google sign-in flow (403/503),
+    /// where `errorDescription` would be too generic.
+    var serverMessage: String? {
+        if case .http(_, _, let message) = self { return message }
+        return nil
+    }
+
+    var serverCode: String? {
+        if case .http(_, let code, _) = self { return code }
+        return nil
+    }
+
+    /// True for 409 Conflict (delete refused without `force=true`).
+    var isConflict: Bool {
+        if case .http(let status, _, _) = self { return status == 409 }
+        return false
+    }
 }
 
 // MARK: - Request bodies (Codable so the outbox can persist them)
@@ -113,6 +133,36 @@ struct LoginRequest: Codable, Sendable {
 struct LoginResponse: Codable, Sendable {
     var token: String
     var user: User
+}
+
+/// POST /auth/google (SSO): the Google `id_token` obtained via OAuth+PKCE.
+struct GoogleLoginRequest: Codable, Sendable {
+    var idToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case idToken = "id_token"
+    }
+}
+
+/// POST /pois body.
+struct CreatePoiRequest: Codable, Sendable {
+    var name: String
+    var kind: PoiKind
+    var lat: Double
+    var lng: Double
+    var address: String?
+    var city: String?
+    var notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case kind
+        case lat
+        case lng
+        case address
+        case city
+        case notes
+    }
 }
 
 struct IngestRequest: Codable, Hashable, Sendable {
@@ -354,6 +404,19 @@ actor APIClient {
         return response
     }
 
+    /// Exchanges a Google `id_token` for an app JWT (POST /auth/google) and
+    /// stores it in the Keychain like the password login. The backend answers
+    /// 403 (with message) if the account is not allowed, 503 if SSO is not
+    /// configured; both surface as `APIError.http`.
+    func loginWithGoogle(idToken: String) async throws -> LoginResponse {
+        let response: LoginResponse = try await send(
+            "POST", "auth/google",
+            body: GoogleLoginRequest(idToken: idToken)
+        )
+        AuthTokenStore.save(response.token)
+        return response
+    }
+
     func logout() {
         AuthTokenStore.clear()
     }
@@ -378,6 +441,37 @@ actor APIClient {
         // Response is `{data:[{type,at,data}]}`, not a bare array.
         let envelope: DataEnvelope<HistoryEntry> = try await send("GET", "locations/\(id)/history")
         return envelope.data
+    }
+
+    /// DELETE /locations/:id. Answers 409 (LOCATION_IN_USE / HAS_CHILDREN,
+    /// with message) unless retried with `force: true`.
+    func deleteLocation(id: String, force: Bool = false) async throws {
+        let query = force ? [URLQueryItem(name: "force", value: "true")] : []
+        let _: EmptyResponse = try await send("DELETE", "locations/\(id)", query: query)
+    }
+
+    // MARK: Points of interest
+
+    /// GET /locations/:id/poi-distances → `{data:[{poi, km, minutes_car, estimated?}]}`.
+    func poiDistances(locationId: String) async throws -> [PoiDistance] {
+        let envelope: DataEnvelope<PoiDistance> = try await send(
+            "GET", "locations/\(locationId)/poi-distances"
+        )
+        return envelope.data
+    }
+
+    func createPoi(_ request: CreatePoiRequest) async throws -> Poi {
+        try await send("POST", "pois", body: request)
+    }
+
+    /// GET /geocode with structured params → bare array `[{display_name, lat, lon}]`.
+    func geocode(name: String? = nil, address: String? = nil, city: String? = nil) async throws -> [GeocodeCandidate] {
+        var query: [URLQueryItem] = []
+        if let name, !name.isEmpty { query.append(URLQueryItem(name: "name", value: name)) }
+        if let address, !address.isEmpty { query.append(URLQueryItem(name: "address", value: address)) }
+        if let city, !city.isEmpty { query.append(URLQueryItem(name: "city", value: city)) }
+        let list: LossyArray<GeocodeCandidate> = try await send("GET", "geocode", query: query)
+        return list.elements
     }
 
     // MARK: Tags
@@ -441,8 +535,19 @@ actor APIClient {
         try await send("POST", "projects", body: request)
     }
 
+    /// DELETE /projects/:id. Answers 409 (PROJECT_HAS_EVENTS, with message)
+    /// unless retried with `force: true`.
+    func deleteProject(id: String, force: Bool = false) async throws {
+        let query = force ? [URLQueryItem(name: "force", value: "true")] : []
+        let _: EmptyResponse = try await send("DELETE", "projects/\(id)", query: query)
+    }
+
     func getEvent(id: String) async throws -> Event {
         try await send("GET", "events/\(id)")
+    }
+
+    func deleteEvent(id: String) async throws {
+        let _: EmptyResponse = try await send("DELETE", "events/\(id)")
     }
 
     func eventLocations(eventId: String) async throws -> [EventLocation] {
