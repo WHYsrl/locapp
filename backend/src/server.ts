@@ -20,6 +20,7 @@ async function main(): Promise<void> {
     googleClientIds: splitCsv(env.GOOGLE_CLIENT_IDS),
     googleAllowedDomains: splitCsv(env.GOOGLE_ALLOWED_DOMAINS),
     googleMapsApiKey: env.GOOGLE_MAPS_API_KEY,
+    publicBaseUrl: env.PUBLIC_API_URL ?? env.RENDER_EXTERNAL_URL,
   });
 
   try {

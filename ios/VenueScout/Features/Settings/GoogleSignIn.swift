@@ -51,14 +51,13 @@ enum GoogleSignInError: Error, LocalizedError {
 /// 3. The returned `id_token` is then posted to the VenueScout backend
 ///    (`POST /api/v1/auth/google`) by the caller.
 @MainActor
-final class GoogleSignInCoordinator: NSObject, ASWebAuthenticationSessionPresentationContextProviding {
+final class GoogleSignInCoordinator: NSObject, ASWebAuthenticationPresentationContextProviding {
     /// Keeps the session alive for the duration of the flow.
     private var activeSession: ASWebAuthenticationSession?
-    /// Anchor captured on the main actor before `start()`; read by the
-    /// nonisolated protocol witness (which the system calls on the main
-    /// thread). Non-optional so the witness never has to build a UIWindow
-    /// (whose init is MainActor-isolated) from a nonisolated context.
-    private nonisolated(unsafe) var anchor: ASPresentationAnchor = ASPresentationAnchor()
+    /// Anchor captured on the main actor before the session starts; read by
+    /// the nonisolated protocol witness. Optional (nil default) so no
+    /// MainActor-isolated initializer runs in a nonisolated default value.
+    private nonisolated(unsafe) var anchor: ASPresentationAnchor?
 
     /// Runs the full OAuth flow and returns the Google `id_token`.
     func signIn() async throws -> String {
@@ -144,7 +143,11 @@ final class GoogleSignInCoordinator: NSObject, ASWebAuthenticationSessionPresent
     /// Called by the system on the main thread; declared nonisolated so it
     /// satisfies the protocol regardless of the SDK's isolation annotations.
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        anchor
+        if let anchor { return anchor }
+        // The system invokes this on the main thread; fetch a window there.
+        return MainActor.assumeIsolated {
+            Self.keyWindow() ?? UIWindow(frame: .zero)
+        }
     }
 
     private static func keyWindow() -> UIWindow? {

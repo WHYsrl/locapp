@@ -564,6 +564,41 @@ export function getProjectMap(projectId: string): Promise<MapFeatureCollection> 
   return http(`/projects/${projectId}/map`);
 }
 
+// ---- export (Google Slides) ----
+
+export type SlidesExportKind = "location" | "event" | "project";
+
+export interface SlidesExportInclude {
+  photos: boolean;
+  capacities: boolean;
+  distances: boolean;
+  prices: boolean;
+  ai_texts: boolean;
+}
+
+export interface SlidesExportResult {
+  url: string;
+  presentation_id: string;
+  warnings: string[];
+}
+
+/**
+ * Genera una presentazione Google Slides nel Drive dell'utente.
+ * `accessToken` è il token OAuth drive.file ottenuto via GIS
+ * (getDriveAccessToken). 502 code 'google_error' su errori lato Google.
+ */
+export function exportSlides(
+  kind: SlidesExportKind,
+  id: string,
+  include: SlidesExportInclude,
+  accessToken: string
+): Promise<SlidesExportResult> {
+  return http("/export/slides", {
+    method: "POST",
+    body: JSON.stringify({ access_token: accessToken, kind, id, include }),
+  });
+}
+
 // ---- registry ----
 
 export function listCompanies(filters: { q?: string; kind?: string; category?: string } = {}): Promise<Company[]> {

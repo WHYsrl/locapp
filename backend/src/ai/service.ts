@@ -4,12 +4,15 @@ import { extractLocationDraft, type ExtractedLocationDraft, type ExtractionInput
 import { parseBriefToCriteria, rerankCandidates, type RerankCandidate, type RerankResult } from './briefSearch.js';
 import { suggestTags } from './tagging.js';
 import type { BriefCriteria } from './criteria.js';
+import { writeDeckContent, type DeckContent, type DeckWriteInput } from '../export/copywriter.js';
 
 export interface AiService {
   extractLocationDraft(input: ExtractionInput): Promise<ExtractedLocationDraft>;
   parseBrief(brief: string): Promise<BriefCriteria>;
   rerank(brief: string, candidates: RerankCandidate[]): Promise<RerankResult[]>;
   suggestTags(text: string): Promise<string[]>;
+  /** One-shot deck copywriting for the Google Slides export (tool-use JSON). */
+  writeDeck(input: DeckWriteInput): Promise<DeckContent>;
 }
 
 export function createAiService(apiKey: string | undefined): AiService {
@@ -27,5 +30,6 @@ export function createAiService(apiKey: string | undefined): AiService {
     parseBrief: (brief) => parseBriefToCriteria(getClient(), brief),
     rerank: (brief, candidates) => rerankCandidates(getClient(), brief, candidates),
     suggestTags: (text) => suggestTags(getClient(), text),
+    writeDeck: (input) => writeDeckContent(getClient(), input),
   };
 }

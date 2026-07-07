@@ -41,8 +41,14 @@ targets:
               - com.googleusercontent.apps.1032233514136-eh9tft86lqqkl00qn94292brtc53ispj
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: it.justwhy.venuescout
+        # NOTE: it.justwhy.venuescout is burned — it was auto-registered by the
+        # personal team and can't be claimed by the WHY srl team.
+        PRODUCT_BUNDLE_IDENTIFIER: it.justwhy.locapp
         PRODUCT_NAME: VenueScout
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         CODE_SIGN_STYLE: Automatic
+        # Persist the signing team across `xcodegen generate` runs.
+        # Set this to the WHY srl team ID (Xcode → Settings → Accounts →
+        # select the team → the ID is shown; or developer.apple.com → Membership).
+        # DEVELOPMENT_TEAM: TEAMID_WHY_SRL

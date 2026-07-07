@@ -9,6 +9,7 @@ import MapView, { type MapMarker } from "@/components/MapView";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import ExportSlidesButton from "@/components/ExportSlidesButton";
 import { useDeleteFlow } from "@/lib/useDeleteFlow";
 import { Badge, EmptyState, Modal, PageHeader, Spinner, btnDangerGhost, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import {
@@ -137,6 +138,7 @@ export default function ProjectDetailPage() {
         }
         action={
           <>
+            <ExportSlidesButton kind="project" id={id} />
             <button className={btnDangerGhost} onClick={deleteFlow.open}>
               Elimina progetto
             </button>

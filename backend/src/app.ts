@@ -22,6 +22,7 @@ import { feedbackRoutes } from './routes/feedback.js';
 import { companyRoutes } from './routes/companies.js';
 import { contactRoutes } from './routes/contacts.js';
 import { geocodeRoutes } from './routes/geocode.js';
+import { exportRoutes } from './routes/export.js';
 import type { GeocodeFn } from './lib/geocode.js';
 import type { MapThumbRenderer } from './lib/staticmap.js';
 
@@ -40,8 +41,10 @@ export interface AppDeps {
   googleAllowedDomains?: string[];
   /** Google Maps Platform key; unset → OSM/haversine fallbacks (no behavior change). */
   googleMapsApiKey?: string;
-  /** Injectable fetch for outbound HTTP (Google tokeninfo/Maps); defaults to global fetch. */
+  /** Injectable fetch for outbound HTTP (Google tokeninfo/Maps/Slides); defaults to global fetch. */
   fetchFn?: typeof fetch;
+  /** Absolute public base URL of this API (PUBLIC_API_URL / RENDER_EXTERNAL_URL); used for public map-thumb links in exports. */
+  publicBaseUrl?: string;
 }
 
 declare module 'fastify' {
@@ -132,6 +135,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register(companyRoutes);
       await api.register(contactRoutes);
       await api.register(geocodeRoutes);
+      await api.register(exportRoutes);
     },
     { prefix: '/api/v1' },
   );

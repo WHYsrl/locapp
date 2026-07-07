@@ -8,6 +8,7 @@ import * as api from "@/lib/api";
 import MapView, { type MapMarker } from "@/components/MapView";
 import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import ExportSlidesButton from "@/components/ExportSlidesButton";
 import { useDeleteFlow } from "@/lib/useDeleteFlow";
 import { Badge, Card, EmptyState, Modal, PageHeader, ScoreBadge, SegmentedControl, Spinner, btnDangerGhost, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import {
@@ -150,6 +151,7 @@ export default function EventShortlistPage() {
                 ["map", "Mappa"],
               ]}
             />
+            <ExportSlidesButton kind="event" id={eventId} />
             <button className={btnDangerGhost} onClick={deleteFlow.open}>
               Elimina evento
             </button>

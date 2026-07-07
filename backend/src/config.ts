@@ -16,6 +16,10 @@ const EnvSchema = z.object({
   GOOGLE_ALLOWED_DOMAINS: z.string().optional(),
   /** Google Maps Platform key. Unset → OSM Nominatim / tile / haversine fallbacks everywhere. */
   GOOGLE_MAPS_API_KEY: z.string().optional(),
+  /** Absolute public base URL of this API (e.g. https://api.example.com); used to build public image links (map thumbs) in exports. */
+  PUBLIC_API_URL: z.string().optional(),
+  /** Set automatically by Render; PUBLIC_API_URL fallback. */
+  RENDER_EXTERNAL_URL: z.string().optional(),
   SKIP_MIGRATE_ON_FAIL: z
     .string()
     .optional()

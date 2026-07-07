@@ -6,6 +6,7 @@ import type { Repos } from '../src/db/repos/index.js';
 import type { AiService } from '../src/ai/service.js';
 import type { StorageService } from '../src/storage/s3.js';
 import type { ExtractedLocationDraft } from '../src/ai/extraction.js';
+import type { DeckContent } from '../src/export/copywriter.js';
 import type { GeocodeFn } from '../src/lib/geocode.js';
 
 export const TEST_SECRET = 'test-secret';
@@ -175,12 +176,23 @@ export const sampleDraft: ExtractedLocationDraft = {
   proposed_media: [],
 };
 
+export const sampleDeck: DeckContent = {
+  title: 'Proposta location',
+  subtitle: 'VenueScout',
+  slides: [
+    { layout: 'cover', title: 'Proposta location', body_lines: [], image_urls: [], table: null, notes: null },
+    { layout: 'venue', title: 'Villa dei Pini', body_lines: ['Firenze', 'Villa storica con parco.'], image_urls: [], table: null, notes: null },
+    { layout: 'table', title: 'Capienze', body_lines: [], image_urls: [], notes: null, table: { headers: ['Location', 'Capienze'], rows: [['Villa dei Pini', 'Platea: 250']] } },
+  ],
+};
+
 export function makeAi(overrides: Partial<AiService> = {}): AiService {
   return {
     extractLocationDraft: vi.fn(async () => sampleDraft),
     parseBrief: vi.fn(async () => ({})),
     rerank: vi.fn(async () => []),
     suggestTags: vi.fn(async () => []),
+    writeDeck: vi.fn(async () => sampleDeck),
     ...overrides,
   };
 }
@@ -217,6 +229,7 @@ export async function buildTestApp(
     googleAllowedDomains?: string[];
     googleMapsApiKey?: string;
     fetchFn?: typeof fetch;
+    publicBaseUrl?: string;
   } = {},
 ): Promise<TestContext> {
   const repos = makeRepos(overrides.repos);
@@ -238,6 +251,7 @@ export async function buildTestApp(
     googleAllowedDomains: overrides.googleAllowedDomains,
     googleMapsApiKey: overrides.googleMapsApiKey,
     fetchFn: overrides.fetchFn,
+    publicBaseUrl: overrides.publicBaseUrl,
   };
   const app = await buildApp(deps);
   const tokens = {

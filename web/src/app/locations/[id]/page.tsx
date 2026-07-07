@@ -13,6 +13,7 @@ import AddSupplierDialog from "@/components/AddSupplierDialog";
 import AddContactDialog from "@/components/AddContactDialog";
 import MediaSection from "@/components/MediaSection";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import ExportSlidesButton from "@/components/ExportSlidesButton";
 import PoiDialog from "@/components/PoiDialog";
 import { useDeleteFlow } from "@/lib/useDeleteFlow";
 import { Badge, Card, EmptyState, Spinner, Stars, btnChip, btnPrimary, btnSecondary } from "@/components/ui";
@@ -197,7 +198,8 @@ export default function LocationDetailPage() {
                 </p>
                 {loc.parent && <p className="mt-0.5 text-xs text-ink/40">interna a {loc.parent.name}</p>}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <ExportSlidesButton kind="location" id={loc.id} />
                 <Link href={`/locations/${loc.id}/edit`} className={btnSecondary}>
                   Modifica scheda
                 </Link>

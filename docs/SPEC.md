@@ -180,6 +180,13 @@ Errors: `{error:{code,message,details?}}` (`details` only on structured conflict
 ### Proposals (phase 3 stub)
 - `POST /events/:id/proposal` `{location_ids[], include:{photos,capacities,distances,prices}, tone}` → `{html_url,pdf_url}` (returns 501 + shape for now)
 
+### Export (AI → Google Slides)
+- `POST /export/slides` `{access_token, kind:'location'|'event'|'project', id, include?:{photos=true,capacities=true,distances=true,prices=false,ai_texts=true}}` → `{url, presentation_id, warnings[]}`
+  - `access_token` is a Google OAuth access token (scope `https://www.googleapis.com/auth/drive.file`) obtained by the browser; used only as a Bearer header towards the Slides API, never logged or persisted.
+  - Pipeline: collect a normalized snapshot (location full card / event + project + shortlist excluding `scartata` / project + events with `preferita`/`confermata`/`utilizzata` first) → ONE Claude call (`claude-sonnet-5`, tool-use JSON) writes the Italian deck copy → `presentations.create` + ONE `presentations.batchUpdate` (predefined layouts, berry `#6D2E46` titles, capacity tables, photo/map images).
+  - Images must be publicly fetchable by Google: photos use S3 presigned GET URLs (1h); the map slide uses the public `GET /locations/:id/map-thumb.png` absolute URL built from `PUBLIC_API_URL` (fallback `RENDER_EXTERNAL_URL`).
+  - Errors: 404 unknown id, 400 validation, 502 `google_error` relaying Google's message (expired token, insufficient scope, …). AI failure is NON-fatal: deterministic factual deck + warning `ai_unavailable`; missing S3 config → warning `photos_unavailable` (photos skipped).
+
 ## 5. ExtractedLocationDraft (ingestion contract, shared by all clients)
 
 ```json
@@ -215,7 +222,7 @@ venuescout/
 ## 7. Environment
 
 Backend: `DATABASE_URL, ANTHROPIC_API_KEY, JWT_SECRET, S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, PORT`
-plus `GOOGLE_CLIENT_IDS` (comma-separated web + iOS OAuth client IDs; unset → `/auth/google` 503), `GOOGLE_ALLOWED_DOMAINS` (comma-separated, optional), `GOOGLE_MAPS_API_KEY` (optional; unset → OSM Nominatim/tiles + haversine fallbacks).
+plus `GOOGLE_CLIENT_IDS` (comma-separated web + iOS OAuth client IDs; unset → `/auth/google` 503), `GOOGLE_ALLOWED_DOMAINS` (comma-separated, optional), `GOOGLE_MAPS_API_KEY` (optional; unset → OSM Nominatim/tiles + haversine fallbacks), `PUBLIC_API_URL` (optional; absolute public base URL for map-thumb image links in Slides exports, falls back to Render's `RENDER_EXTERNAL_URL`).
 Web: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_KEY`; iOS: `APIBaseURL` in Config.
 
 ## 8. Conventions

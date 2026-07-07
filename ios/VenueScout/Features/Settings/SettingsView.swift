@@ -145,7 +145,9 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(viewModel.isWorking)
-                    if !trimmedGoogleClientID.isEmpty {
+                    // Config falls back to the bundled default client ID, so the
+                    // button shows even when the manual override field is empty.
+                    if !Config.googleIOSClientID.isEmpty {
                         Button {
                             Task { await viewModel.loginWithGoogle(coordinator: googleCoordinator) }
                         } label: {
