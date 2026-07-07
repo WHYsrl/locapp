@@ -6,7 +6,7 @@
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import { SONNET_MODEL } from '../ai/extraction.js';
+import { env } from '../config.js';
 import type {
   ExportCapacity,
   ExportData,
@@ -101,13 +101,13 @@ Structure: one 'cover' slide first, then 'section' dividers where useful, one 'v
 Put image URLs (photo_urls / map_url from the data) into image_urls EXACTLY as given, never modified.
 Keep body_lines under 8 per slide and table sizes small. Always answer by calling the record_deck_content tool.`;
 
-/** Single Claude call producing the whole deck (claude-sonnet-5, forced tool-use). */
+/** Single Claude call producing the whole deck (AI_DECK_MODEL, forced tool-use). */
 export async function writeDeckContent(
   client: Anthropic,
   input: DeckWriteInput,
 ): Promise<DeckContent> {
   const response = await client.messages.create({
-    model: SONNET_MODEL,
+    model: env.AI_DECK_MODEL,
     max_tokens: 8192,
     system: COPY_SYSTEM,
     tools: [DECK_TOOL],

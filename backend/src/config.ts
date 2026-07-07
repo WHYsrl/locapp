@@ -5,6 +5,9 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().default(3000),
   DATABASE_URL: z.string().default('postgres://postgres:postgres@localhost:5432/venuescout'),
   ANTHROPIC_API_KEY: z.string().optional(),
+  /** Model for client-facing deck copy (Slides export). Opus for best prose;
+   *  set to claude-sonnet-5 to trade quality for speed/cost. */
+  AI_DECK_MODEL: z.string().default('claude-opus-4-8'),
   JWT_SECRET: z.string().default('dev-secret-change-me'),
   S3_ENDPOINT: z.string().optional(),
   S3_BUCKET: z.string().optional(),
