@@ -123,7 +123,23 @@ export default function PoiDialog({
           fields={{ name: f.name, address: f.address, city: f.city }}
           disabled={!f.name.trim() && !f.address.trim() && !f.city.trim()}
           buttonLabel="Proponi coordinate da nome/indirizzo"
-          onPick={(c) => setF((prev) => ({ ...prev, lat: String(c.lat), lng: String(c.lon) }))}
+          onPick={(c) => {
+            // Align address/city from the candidate's display_name (Nominatim/Google
+            // comma-separated form, e.g. "Stazione Termini, Piazza dei Cinquecento,
+            // ..., Roma, Roma Capitale, Lazio, 00185, Italia").
+            const parts = c.display_name.split(",").map((s) => s.trim()).filter(Boolean);
+            const streetRe = /\b(via|viale|piazza|piazzale|corso|largo|strada|vicolo|lungotevere|borgo|contrada)\b/i;
+            const street = parts.find((p) => streetRe.test(p)) ?? (parts.length > 1 ? parts[1] : "");
+            const postalIdx = parts.findIndex((p) => /^\d{5}$/.test(p));
+            const city = postalIdx >= 3 ? parts[postalIdx - 3] : "";
+            setF((prev) => ({
+              ...prev,
+              lat: String(c.lat),
+              lng: String(c.lon),
+              address: street || prev.address,
+              city: city || prev.city,
+            }));
+          }}
         />
 
         <div className="grid grid-cols-2 gap-4">

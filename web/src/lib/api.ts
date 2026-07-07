@@ -45,9 +45,15 @@ import type {
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+/** Style version of the map thumbnails: bump when the backend rendering
+ *  changes (e.g. OSM → Google Static Maps) so browsers drop the day-long
+ *  HTTP-cached copies (Cache-Control: public, max-age=86400). The backend
+ *  ignores the parameter. */
+const MAP_THUMB_STYLE_VERSION = 2;
+
 /** Public static map thumbnail (480x240, 404 when the location has no coords). */
 export function mapThumbUrl(locationId: string): string {
-  return `${API_URL}/api/v1/locations/${locationId}/map-thumb.png`;
+  return `${API_URL}/api/v1/locations/${locationId}/map-thumb.png?v=${MAP_THUMB_STYLE_VERSION}`;
 }
 
 /** Resolve API-relative paths (e.g. thumbnail_url) to absolute URLs. */
@@ -410,9 +416,10 @@ export function createPoi(payload: {
   city?: string | null;
   notes?: string | null;
 }): Promise<Poi> {
+  // Backend validates `lon`; send both aliases for safety.
   return http<{ data: Poi } | Poi>("/pois", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, lon: payload.lng }),
   }).then(unwrapData);
 }
 
@@ -428,9 +435,10 @@ export function updatePoi(
     notes: string | null;
   }>
 ): Promise<Poi> {
+  // Backend validates `lon`; send both aliases when coordinates change.
   return http<{ data: Poi } | Poi>(`/pois/${id}`, {
     method: "PATCH",
-    body: JSON.stringify(patch),
+    body: JSON.stringify(patch.lng !== undefined ? { ...patch, lon: patch.lng } : patch),
   }).then(unwrapData);
 }
 

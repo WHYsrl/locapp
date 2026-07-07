@@ -101,7 +101,10 @@ export default function EventShortlistPage() {
 
   const markers: MapMarker[] = useMemo(
     () =>
-      (mapData?.features ?? []).map((f) => ({
+      (mapData?.features ?? [])
+        // Locations without coordinates arrive with geometry: null (valid GeoJSON).
+        .filter((f) => Array.isArray(f.geometry?.coordinates))
+        .map((f) => ({
         id: f.properties.id,
         lng: f.geometry.coordinates[0],
         lat: f.geometry.coordinates[1],

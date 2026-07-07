@@ -126,6 +126,33 @@ describe('GET /locations/:id/map-thumb.png', () => {
     expect(renderMapThumb).toHaveBeenCalledOnce();
   });
 
+  it('tolerates the web cache-buster ?v= and re-renders on ?refresh=1 (OSM path)', async () => {
+    let hit = 0;
+    const renderMapThumb = vi.fn(async () => Buffer.from(`PNG-${++hit}`));
+    const ctx = await buildTestApp({
+      repos: {
+        locations: {
+          getById: async () => locationRow,
+          coordinates: async () => [{ id: 'loc-1', lon: LON, lat: LAT }],
+        },
+      },
+      renderMapThumb,
+    });
+    // ?v= is the browser-cache style-version param: ignored server-side, same cache entry.
+    const first = await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png?v=2' });
+    const cached = await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png' });
+    expect(first.statusCode).toBe(200);
+    expect(cached.rawPayload.toString()).toBe('PNG-1');
+    expect(renderMapThumb).toHaveBeenCalledOnce();
+
+    const refreshed = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations/loc-1/map-thumb.png?refresh=1',
+    });
+    expect(refreshed.rawPayload.toString()).toBe('PNG-2');
+    expect(renderMapThumb).toHaveBeenCalledTimes(2);
+  });
+
   it('returns 404 when the location has no geometry or does not exist', async () => {
     const renderMapThumb = vi.fn(async () => Buffer.from('PNG-BYTES'));
     const ctx = await buildTestApp({

@@ -21,7 +21,12 @@ import { lngLatOf, type Configuration, type EffectiveStatus, type LocationFilter
  *  static map; se l'immagine non è raggiungibile si nasconde (placeholder). */
 function RowThumb({ loc }: { loc: LocationListItem }) {
   const [broken, setBroken] = useState(false);
-  const src = loc.thumbnail_url ? api.resolveApiUrl(loc.thumbnail_url) : api.mapThumbUrl(loc.id);
+  // Il fallback map-thumb del serializer passa dall'helper versionato (?v=)
+  // così il cambio di stile invalida anche la copia in cache del browser.
+  const src =
+    loc.thumbnail_url && !loc.thumbnail_url.includes("/map-thumb.png")
+      ? api.resolveApiUrl(loc.thumbnail_url)
+      : api.mapThumbUrl(loc.id);
   if (broken) return <div className="h-11 w-[72px] rounded-lg border border-hairline bg-surface" aria-hidden />;
   return (
     // eslint-disable-next-line @next/next/no-img-element

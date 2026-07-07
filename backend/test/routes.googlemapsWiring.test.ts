@@ -79,6 +79,90 @@ describe('GET /locations/:id/map-thumb.png with GOOGLE_MAPS_API_KEY', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it('passes maptype through to the Static Maps URL and defaults to roadmap', async () => {
+    const fetchFn = vi.fn(async () => new Response(Buffer.from('png'))) as unknown as typeof fetch;
+    const ctx = await buildTestApp({
+      googleMapsApiKey: 'maps-key',
+      fetchFn,
+      repos: { locations: { getById: async () => location, coordinates: async () => [coord] } },
+    });
+    await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png' });
+    await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png?maptype=satellite' });
+    const calls = (fetchFn as ReturnType<typeof vi.fn>).mock.calls;
+    expect(String(calls[0]![0])).toContain('maptype=roadmap');
+    expect(String(calls[1]![0])).toContain('maptype=satellite');
+  });
+
+  it('caches per maptype: switching style never serves the other style bytes', async () => {
+    // Distinct bytes per maptype so cache mixups would be visible in the payload.
+    const fetchFn = vi.fn(async (url: string) =>
+      new Response(Buffer.from(url.includes('maptype=hybrid') ? 'hybrid-png' : 'roadmap-png')),
+    ) as unknown as typeof fetch;
+    const ctx = await buildTestApp({
+      googleMapsApiKey: 'maps-key',
+      fetchFn,
+      repos: { locations: { getById: async () => location, coordinates: async () => [coord] } },
+    });
+    const roadmap = await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png' });
+    const hybrid = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations/loc-1/map-thumb.png?maptype=hybrid',
+    });
+    expect(roadmap.rawPayload.toString()).toBe('roadmap-png');
+    expect(hybrid.rawPayload.toString()).toBe('hybrid-png');
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    // Each style now hits its own cache entry: no extra outbound fetches.
+    const roadmapAgain = await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png' });
+    const hybridAgain = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations/loc-1/map-thumb.png?maptype=hybrid',
+    });
+    expect(roadmapAgain.rawPayload.toString()).toBe('roadmap-png');
+    expect(hybridAgain.rawPayload.toString()).toBe('hybrid-png');
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an invalid maptype with 400 before any outbound fetch', async () => {
+    const fetchFn = vi.fn(async () => new Response(Buffer.from('png'))) as unknown as typeof fetch;
+    const ctx = await buildTestApp({
+      googleMapsApiKey: 'maps-key',
+      fetchFn,
+      repos: { locations: { getById: async () => location, coordinates: async () => [coord] } },
+    });
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations/loc-1/map-thumb.png?maptype=streetview',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('VALIDATION_ERROR');
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('?refresh=1 bypasses the cache and replaces the entry with fresh bytes', async () => {
+    let hit = 0;
+    const fetchFn = vi.fn(async () => new Response(Buffer.from(`png-v${++hit}`))) as unknown as typeof fetch;
+    const ctx = await buildTestApp({
+      googleMapsApiKey: 'maps-key',
+      fetchFn,
+      repos: { locations: { getById: async () => location, coordinates: async () => [coord] } },
+    });
+    const first = await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png' });
+    const cached = await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png' });
+    expect(first.rawPayload.toString()).toBe('png-v1');
+    expect(cached.rawPayload.toString()).toBe('png-v1');
+
+    const refreshed = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/locations/loc-1/map-thumb.png?refresh=1',
+    });
+    expect(refreshed.rawPayload.toString()).toBe('png-v2');
+    // The refreshed bytes replaced the cache entry for subsequent plain requests.
+    const after = await ctx.app.inject({ method: 'GET', url: '/api/v1/locations/loc-1/map-thumb.png' });
+    expect(after.rawPayload.toString()).toBe('png-v2');
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
   it('falls back to OSM tile stitching when the Google fetch fails', async () => {
     const fetchFn = vi.fn(async () => new Response('quota', { status: 403 })) as unknown as typeof fetch;
     const renderMapThumb = vi.fn(async () => Buffer.from('osm-png'));

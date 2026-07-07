@@ -126,4 +126,11 @@ describe('googleStaticMapUrl', () => {
     expect(url).toContain(encodeURIComponent('color:0x6D2E46|41.9,12.5'));
     expect(url).toContain(`key=${KEY}`);
   });
+
+  it('defaults maptype to roadmap and honors an explicit style', () => {
+    expect(googleStaticMapUrl(41.9, 12.5, KEY)).toContain('maptype=roadmap');
+    expect(googleStaticMapUrl(41.9, 12.5, KEY, 'terrain')).toContain('maptype=terrain');
+    expect(googleStaticMapUrl(41.9, 12.5, KEY, 'satellite')).toContain('maptype=satellite');
+    expect(googleStaticMapUrl(41.9, 12.5, KEY, 'hybrid')).toContain('maptype=hybrid');
+  });
 });

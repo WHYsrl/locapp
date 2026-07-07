@@ -19,6 +19,10 @@ const TIMEOUT_MS = 8_000;
 /** Berry marker matching the app accent color (hex without # for the Static Maps API). */
 export const STATIC_MAP_MARKER_COLOR = '0x6D2E46';
 
+/** Map styles supported by the Static Maps `maptype` parameter. */
+export const STATIC_MAP_TYPES = ['roadmap', 'terrain', 'satellite', 'hybrid'] as const;
+export type StaticMapType = (typeof STATIC_MAP_TYPES)[number];
+
 export interface LatLng {
   lat: number;
   lng: number;
@@ -160,11 +164,17 @@ export async function googleRouteMatrix(
 }
 
 /** Maps Static API URL (480x240, zoom 15, berry marker). Contains the key: server-side use only. */
-export function googleStaticMapUrl(lat: number, lng: number, apiKey: string): string {
+export function googleStaticMapUrl(
+  lat: number,
+  lng: number,
+  apiKey: string,
+  maptype: StaticMapType = 'roadmap',
+): string {
   const params = new URLSearchParams({
     center: `${lat},${lng}`,
     zoom: '15',
     size: '480x240',
+    maptype,
     markers: `color:${STATIC_MAP_MARKER_COLOR}|${lat},${lng}`,
     key: apiKey,
   });
@@ -180,9 +190,10 @@ export async function fetchGoogleStaticMap(
   lng: number,
   apiKey: string,
   fetchFn: typeof fetch = fetch,
+  maptype: StaticMapType = 'roadmap',
 ): Promise<Buffer | null> {
   try {
-    const response = await fetchFn(googleStaticMapUrl(lat, lng, apiKey), {
+    const response = await fetchFn(googleStaticMapUrl(lat, lng, apiKey, maptype), {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!response.ok) return null;

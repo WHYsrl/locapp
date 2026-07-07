@@ -6,10 +6,16 @@ import { rowToApi, rowsToApi } from '../lib/apiMappers.js';
 import { buildHistoryTimeline, deriveUsage, resolveEffective, withGeo } from '../lib/serializers.js';
 import { registerTags } from '../lib/tagService.js';
 import { renderMapThumb } from '../lib/staticmap.js';
-import { fetchGoogleStaticMap } from '../lib/googlemaps.js';
+import { STATIC_MAP_TYPES, fetchGoogleStaticMap } from '../lib/googlemaps.js';
 import type { CapacityConfiguration, VisitStatus } from '../db/schema.js';
 
 const IdParams = z.object({ id: z.string() });
+
+// `v` (the web client's style-version cache buster) is simply ignored here.
+const MapThumbQuery = z.object({
+  maptype: z.enum(STATIC_MAP_TYPES).default('roadmap'),
+  refresh: z.coerce.boolean().optional(),
+});
 
 const ListQuery = z.object({
   q: z.string().optional(),
@@ -112,12 +118,18 @@ export async function locationRoutes(app: FastifyInstance): Promise<void> {
   // Public (no auth, like /health): consumed via <img src> which cannot send headers.
   app.get('/locations/:id/map-thumb.png', { config: { public: true } }, async (req, reply) => {
     const { id } = IdParams.parse(req.params);
+    const { maptype, refresh } = MapThumbQuery.parse(req.query);
     const location = await repos.locations.getById(id);
     if (!location) throw notFound('Location');
     const [coord] = await repos.locations.coordinates([id]);
     if (coord?.lon == null || coord.lat == null) throw notFound('Location geometry');
 
-    const cacheKey = `${id}:${coord.lon}:${coord.lat}`;
+    // The cache key includes the maptype AND the active provider (Google key
+    // configured or not) so switching style or provider never serves stale bytes.
+    const provider = app.deps.googleMapsApiKey ? 'google' : 'osm';
+    const cacheKey = `${id}:${coord.lon}:${coord.lat}:${provider}:${maptype}`;
+    // ?refresh=1 drops the cached entry and re-renders (result is re-cached below).
+    if (refresh) thumbCache.delete(cacheKey);
     let png = thumbCache.get(cacheKey);
     if (!png) {
       // With GOOGLE_MAPS_API_KEY set the thumbnail is proxied from the Maps
@@ -125,8 +137,13 @@ export async function locationRoutes(app: FastifyInstance): Promise<void> {
       // it is stitched from OSM raster tiles as before.
       if (app.deps.googleMapsApiKey) {
         png =
-          (await fetchGoogleStaticMap(coord.lat, coord.lon, app.deps.googleMapsApiKey, app.deps.fetchFn)) ??
-          undefined;
+          (await fetchGoogleStaticMap(
+            coord.lat,
+            coord.lon,
+            app.deps.googleMapsApiKey,
+            app.deps.fetchFn,
+            maptype,
+          )) ?? undefined;
       }
       if (!png) {
         const render = app.deps.renderMapThumb ?? renderMapThumb;

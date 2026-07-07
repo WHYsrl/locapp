@@ -11,6 +11,59 @@ import type { MapMarker } from "./MapCanvas";
 const DEFAULT_CENTER = { lat: 44.8, lng: 10.5 };
 const DEFAULT_ZOOM = 5.2;
 
+// --- Map view options (type + traffic), shared across every map instance ---
+
+type MapTypeId = "roadmap" | "terrain" | "satellite" | "hybrid";
+
+const MAP_TYPES: ReadonlyArray<{ id: MapTypeId; label: string }> = [
+  { id: "roadmap", label: "Strada" },
+  { id: "terrain", label: "Terreno" },
+  { id: "satellite", label: "Satellite" },
+  { id: "hybrid", label: "Ibrido" },
+];
+
+interface MapPrefs {
+  mapType: MapTypeId;
+  traffic: boolean;
+}
+
+const DEFAULT_PREFS: MapPrefs = { mapType: "roadmap", traffic: false };
+const PREFS_STORAGE_KEY = "venuescout:maptype";
+
+/** Restore the persisted map type + traffic toggle (defaults on any failure). */
+function loadMapPrefs(): MapPrefs {
+  if (typeof window === "undefined") return DEFAULT_PREFS;
+  try {
+    const raw = window.localStorage.getItem(PREFS_STORAGE_KEY);
+    if (!raw) return DEFAULT_PREFS;
+    const parsed = JSON.parse(raw) as { mapType?: unknown; traffic?: unknown };
+    const mapType = MAP_TYPES.find((t) => t.id === parsed.mapType)?.id ?? DEFAULT_PREFS.mapType;
+    return { mapType, traffic: parsed.traffic === true };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+function saveMapPrefs(prefs: MapPrefs): void {
+  try {
+    window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Storage full/blocked: the preference simply won't persist.
+  }
+}
+
+/** Mounts/unmounts a google.maps.TrafficLayer on the current map instance. */
+function TrafficLayer({ enabled }: { enabled: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || !enabled) return;
+    const layer = new google.maps.TrafficLayer();
+    layer.setMap(map);
+    return () => layer.setMap(null);
+  }, [map, enabled]);
+  return null;
+}
+
 /** Fits the viewport to the markers (mirrors the MapLibre fitBounds logic). */
 function FitBounds({ markers }: { markers: MapMarker[] }) {
   const map = useMap();
@@ -28,6 +81,52 @@ function FitBounds({ markers }: { markers: MapMarker[] }) {
   return null;
 }
 
+/** Compact glass overlay (top-right): map style segmented options + traffic pill. */
+function MapOptionsControl({
+  prefs,
+  onChange,
+}: {
+  prefs: MapPrefs;
+  onChange: (prefs: MapPrefs) => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute right-2.5 top-2.5 z-10 flex items-center gap-1.5">
+      <div
+        role="group"
+        aria-label="Stile mappa"
+        className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-hairline bg-white/70 p-0.5 shadow-soft backdrop-blur"
+      >
+        {MAP_TYPES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            aria-pressed={prefs.mapType === t.id}
+            onClick={() => onChange({ ...prefs, mapType: t.id })}
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition duration-150 ${
+              prefs.mapType === t.id
+                ? "bg-white text-ink shadow-soft"
+                : "text-ink/55 hover:text-ink"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        aria-pressed={prefs.traffic}
+        title="Mostra il traffico in tempo reale"
+        onClick={() => onChange({ ...prefs, traffic: !prefs.traffic })}
+        className={`pointer-events-auto rounded-full border border-hairline px-2.5 py-1 text-[11px] font-semibold shadow-soft backdrop-blur transition duration-150 ${
+          prefs.traffic ? "bg-white text-ink" : "bg-white/70 text-ink/55 hover:text-ink"
+        }`}
+      >
+        Traffico
+      </button>
+    </div>
+  );
+}
+
 export default function GoogleMapCanvas({
   apiKey,
   markers,
@@ -40,6 +139,13 @@ export default function GoogleMapCanvas({
   className?: string;
 }) {
   const [selected, setSelected] = useState<MapMarker | null>(null);
+  // Loaded lazily in the initializer: this component is client-only (ssr: false).
+  const [prefs, setPrefs] = useState<MapPrefs>(loadMapPrefs);
+
+  const updatePrefs = (next: MapPrefs) => {
+    setPrefs(next);
+    saveMapPrefs(next);
+  };
 
   // Deselect when the marker set changes (e.g. filters).
   useEffect(() => {
@@ -49,13 +155,14 @@ export default function GoogleMapCanvas({
   return (
     <div
       style={{ height }}
-      className={`w-full overflow-hidden rounded-2xl border border-hairline shadow-soft ${className}`}
+      className={`relative w-full overflow-hidden rounded-2xl border border-hairline shadow-soft ${className}`}
     >
       <APIProvider apiKey={apiKey} language="it" region="IT">
         <Map
           mapId="DEMO_MAP_ID"
           defaultCenter={DEFAULT_CENTER}
           defaultZoom={DEFAULT_ZOOM}
+          mapTypeId={prefs.mapType}
           gestureHandling="greedy"
           disableDefaultUI={false}
           streetViewControl={false}
@@ -63,6 +170,7 @@ export default function GoogleMapCanvas({
           fullscreenControl={false}
         >
           <FitBounds markers={markers} />
+          <TrafficLayer enabled={prefs.traffic} />
           {markers.map((m) => (
             <AdvancedMarker
               key={m.id}
@@ -95,6 +203,7 @@ export default function GoogleMapCanvas({
             </InfoWindow>
           )}
         </Map>
+        <MapOptionsControl prefs={prefs} onChange={updatePrefs} />
       </APIProvider>
     </div>
   );
