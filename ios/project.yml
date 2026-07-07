@@ -32,14 +32,13 @@ targets:
         NSPhotoLibraryAddUsageDescription: "VenueScout salva le foto dei sopralluoghi nella tua libreria."
         NSLocationWhenInUseUsageDescription: "VenueScout usa la posizione per mostrare le location vicine sulla mappa."
         # Google Sign-In (OAuth+PKCE, no SDK): the custom URL scheme is the
-        # *reversed* iOS OAuth client ID. Replace the placeholder below with
-        # your own (e.g. com.googleusercontent.apps.1234567890-abcdefg) and
-        # re-run `xcodegen generate`. See ios/README.md ("Accesso con Google").
+        # *reversed* iOS OAuth client ID (must match Config.defaultGoogleIOSClientID).
+        # After changing it, re-run `xcodegen generate`. See ios/README.md.
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLName: GoogleOAuthRedirect
             CFBundleURLSchemes:
-              - com.googleusercontent.apps.REPLACE-WITH-IOS-CLIENT-ID
+              - com.googleusercontent.apps.1032233514136-eh9tft86lqqkl00qn94292brtc53ispj
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: it.justwhy.venuescout

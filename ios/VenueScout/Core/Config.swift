@@ -9,12 +9,18 @@ enum Config {
 
     /// UserDefaults key for the Google OAuth iOS client ID
     /// (`xxxx.apps.googleusercontent.com`), editable in Impostazioni.
-    /// Empty by default: the "Accedi con Google" button is hidden until set.
+    /// Falls back to the bundled default below when unset.
     static let googleIOSClientIDDefaultsKey = "GoogleiOSClientID"
 
+    /// Default iOS OAuth client ID (not a secret — it ships in the binary).
+    /// Its reversed form must match the CFBundleURLSchemes entry in project.yml.
+    static let defaultGoogleIOSClientID =
+        "1032233514136-eh9tft86lqqkl00qn94292brtc53ispj.apps.googleusercontent.com"
+
     static var googleIOSClientID: String {
-        UserDefaults.standard.string(forKey: googleIOSClientIDDefaultsKey)?
+        let stored = UserDefaults.standard.string(forKey: googleIOSClientIDDefaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return stored.isEmpty ? defaultGoogleIOSClientID : stored
     }
 
     static var baseURLString: String {
