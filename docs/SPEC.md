@@ -106,6 +106,12 @@ ingestion_jobs(id uuid pk, location_id fk null, source_type check in ('audio','t
   extracted jsonb,          -- ExtractedLocationDraft (see §5)
   error text, created_at, applied_at)
 
+export_jobs(id uuid pk, kind text, target_id uuid, target_name text,   -- migration 0005; async Slides exports (§4 Export)
+  status check in ('pending','processing','done','failed') default 'pending',
+  presentation_id text null, url text null, warnings jsonb default '[]', error text null,
+  requested_by uuid null, include jsonb, created_at, finished_at null)
+  -- the Google access_token is NEVER stored here: it travels in memory only
+
 users(id uuid pk, email unique, name, password_hash, role check in ('admin','editor','viewer'), created_at)
 ```
 
@@ -180,12 +186,20 @@ Errors: `{error:{code,message,details?}}` (`details` only on structured conflict
 ### Proposals (phase 3 stub)
 - `POST /events/:id/proposal` `{location_ids[], include:{photos,capacities,distances,prices}, tone}` → `{html_url,pdf_url}` (returns 501 + shape for now)
 
-### Export (AI → Google Slides)
-- `POST /export/slides` `{access_token, kind:'location'|'event'|'project', id, include?:{photos=true,capacities=true,distances=true,prices=false,ai_texts=true}}` → `{url, presentation_id, warnings[]}`
-  - `access_token` is a Google OAuth access token (scope `https://www.googleapis.com/auth/drive.file`) obtained by the browser; used only as a Bearer header towards the Slides API, never logged or persisted.
-  - Pipeline: collect a normalized snapshot (location full card / event + project + shortlist excluding `scartata` / project + events with `preferita`/`confermata`/`utilizzata` first) → ONE Claude call (`claude-sonnet-5`, tool-use JSON) writes the Italian deck copy → `presentations.create` + ONE `presentations.batchUpdate` (predefined layouts, berry `#6D2E46` titles, capacity tables, photo/map images).
-  - Images must be publicly fetchable by Google: photos use S3 presigned GET URLs (1h); the map slide uses the public `GET /locations/:id/map-thumb.png` absolute URL built from `PUBLIC_API_URL` (fallback `RENDER_EXTERNAL_URL`).
-  - Errors: 404 unknown id, 400 validation, 502 `google_error` relaying Google's message (expired token, insufficient scope, …). AI failure is NON-fatal: deterministic factual deck + warning `ai_unavailable`; missing S3 config → warning `photos_unavailable` (photos skipped).
+### Export (AI → Google Slides, async jobs)
+- `POST /export/slides` `{access_token, kind:'location'|'event'|'project', id, include?:{photos=true,capacities=true,distances=true,prices=false,ai_texts=true}}` → **202 `{job_id}`**: validates, resolves the target name (404 unknown id, 400 validation), inserts an `export_jobs` row (migration `0005`) and processes in-process fire-and-forget (same pattern as `/ingest`).
+  - `access_token` is a Google OAuth access token (scope `https://www.googleapis.com/auth/drive.file`) obtained by the browser; handed to the async processor IN MEMORY ONLY and used solely as a Bearer header towards the Slides API — never logged, never persisted (not on the job row).
+- `GET /export/jobs/:id` → `{id, kind, target_id, target_name, status:'pending'|'processing'|'done'|'failed', url, presentation_id, warnings[], error, created_at, finished_at}` (poll until done/failed).
+- `GET /export/jobs?kind=&q=&page=&per_page=` → export repository `{data, meta}`, newest first; `q` filters `target_name` (ilike substring).
+  - Processing flips `pending→processing→done/failed`; Google errors are recorded on the job as `error` (message only), so are collect failures. AI failure stays NON-fatal: deterministic factual deck + warning `ai_unavailable`; missing S3 config → warning `photos_unavailable` (photos skipped).
+- Pipeline: collect a normalized snapshot (location full card / event + project + shortlist excluding `scartata` / project + events with `preferita`/`confermata`/`utilizzata` first, with event `date_start`/`date_end`/`pax` always in the data) → resolve images → POI route maps → ONE Claude call (`claude-sonnet-5`, tool-use JSON) writes the Italian deck copy (deterministic fallback produces the same layouts) → `presentations.create` + ONE `presentations.batchUpdate` (kept < 400 requests via table/gallery caps).
+- Template v2 layouts (berry `#6D2E46` titles everywhere):
+  - `cover_photo`: full-bleed cover photo sized to the 10×5.625 in page via EMU, semi-transparent berry band + white title/subtitle on top; plain solid-berry background when no photo. Event decks always carry the formatted dates (`dd/mm/yyyy – dd/mm/yyyy`) and pax in the cover subtitle; project decks put each event's dates (and pax) on its `section` slide.
+  - `venue_split`: facts in an explicit left-column text box, photo(s) in the right column.
+  - `gallery_grid`: up to 4 photos in a 2×2 grid (2 side-by-side / 1 large when fewer), consistent margins.
+  - `poi_map`: static map left + compact table `Nome POI | Km | Min auto` (haversine values flagged `(stima)`).
+- POI map with routes: with `GOOGLE_MAPS_API_KEY`, the Routes API `computeRoutes` (`POST https://routes.googleapis.com/directions/v2:computeRoutes`, fieldmask `routes.polyline.encodedPolyline,routes.distanceMeters,routes.duration`) is called for up to 5 nearest POIs; the Maps Static API URL gets one `path=enc:<polyline>` per route plus markers (location berry `0x6D2E46`, POIs gold `0xD4A947`), and route km/min replace the haversine estimates (`estimated:false`). Without a key (or per failed route): OSM map-thumb / markers-only map + haversine `stima` — same fallback logic as `/locations/:id/poi-distances`.
+- Images must be publicly fetchable by Google: photos use S3 presigned GET URLs (1h); the plain map slide uses the public `GET /locations/:id/map-thumb.png` absolute URL built from `PUBLIC_API_URL` (fallback `RENDER_EXTERNAL_URL`). NOTE: the routes static-map URL embeds the server `GOOGLE_MAPS_API_KEY` — that is how the Maps Static API works (referer-free server key); accepted, the URL only travels to the Slides API.
 
 ## 5. ExtractedLocationDraft (ingestion contract, shared by all clients)
 

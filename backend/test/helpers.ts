@@ -149,6 +149,38 @@ export function makeRepos(overrides: SectionOverrides = {}): Repos {
       getById: vi.fn(async () => null),
       update: vi.fn(async (id: string, patch: Record<string, unknown>) => ({ id, ...patch })),
     },
+    // Stateful in-memory export jobs so async-job tests can poll status changes.
+    exportJobs: (() => {
+      const jobs = new Map<string, Record<string, unknown>>();
+      let seq = 0;
+      return {
+        create: vi.fn(async (input: Record<string, unknown>) => {
+          const row = {
+            id: `ej-${++seq}`,
+            status: 'pending',
+            presentationId: null,
+            url: null,
+            warnings: [],
+            error: null,
+            requestedBy: null,
+            include: null,
+            createdAt: new Date(),
+            finishedAt: null,
+            ...input,
+          };
+          jobs.set(row['id'] as string, row);
+          return row;
+        }),
+        getById: vi.fn(async (id: string) => jobs.get(id) ?? null),
+        update: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+          const row = jobs.get(id);
+          if (!row) return null;
+          Object.assign(row, patch);
+          return row;
+        }),
+        list: vi.fn(async () => ({ rows: [...jobs.values()].reverse(), total: jobs.size })),
+      };
+    })(),
     search: {
       prefilterLocations: vi.fn(async () => []),
     },

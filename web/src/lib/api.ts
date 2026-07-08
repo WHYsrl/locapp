@@ -576,27 +576,51 @@ export interface SlidesExportInclude {
   ai_texts: boolean;
 }
 
-export interface SlidesExportResult {
-  url: string;
-  presentation_id: string;
+export type ExportJobStatus = "pending" | "processing" | "done" | "failed";
+
+/** Riga di GET /export/jobs — generazione Slides in background. */
+export interface ExportJob {
+  id: string;
+  kind: SlidesExportKind;
+  target_id: string;
+  target_name: string;
+  status: ExportJobStatus;
+  url: string | null;
+  presentation_id: string | null;
   warnings: string[];
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
 }
 
 /**
- * Genera una presentazione Google Slides nel Drive dell'utente.
- * `accessToken` è il token OAuth drive.file ottenuto via GIS
- * (getDriveAccessToken). 502 code 'google_error' su errori lato Google.
+ * Avvia la generazione di una presentazione Google Slides nel Drive
+ * dell'utente. Il backend risponde 202 con {job_id}: la generazione gira in
+ * background e va seguita con getExportJob (polling). `accessToken` è il
+ * token OAuth drive.file ottenuto via GIS (getDriveAccessToken).
  */
 export function exportSlides(
   kind: SlidesExportKind,
   id: string,
   include: SlidesExportInclude,
   accessToken: string
-): Promise<SlidesExportResult> {
-  return http("/export/slides", {
+): Promise<{ job_id: string }> {
+  return http<{ job_id: string } | { data: { job_id: string } }>("/export/slides", {
     method: "POST",
     body: JSON.stringify({ access_token: accessToken, kind, id, include }),
-  });
+  }).then(unwrapData);
+}
+
+/** Stato di un job di export (polling ogni ~2.5s finché done/failed). */
+export function getExportJob(id: string): Promise<ExportJob> {
+  return http<ExportJob | { data: ExportJob }>(`/export/jobs/${id}`).then(unwrapData);
+}
+
+/** Repository presentazioni: elenco paginato dei job, più recenti prima. */
+export function listExportJobs(
+  params: { kind?: SlidesExportKind | ""; q?: string; page?: number; per_page?: number } = {}
+): Promise<Paginated<ExportJob>> {
+  return http(`/export/jobs${qs(params)}`);
 }
 
 // ---- registry ----

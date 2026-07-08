@@ -441,6 +441,31 @@ export const ingestionJobs = pgTable('ingestion_jobs', {
   appliedAt: timestamp('applied_at', { withTimezone: true }),
 });
 
+// Async Google Slides export jobs (SPEC.md §4 Export). The Google access
+// token is NEVER stored on the row: it travels in memory only.
+export type ExportJobKind = 'location' | 'event' | 'project';
+export type ExportJobStatus = 'pending' | 'processing' | 'done' | 'failed';
+
+export const exportJobs = pgTable(
+  'export_jobs',
+  {
+    id: pk(),
+    kind: text('kind').$type<ExportJobKind>().notNull(),
+    targetId: uuid('target_id').notNull(),
+    targetName: text('target_name').notNull(),
+    status: text('status').$type<ExportJobStatus>().notNull().default('pending'),
+    presentationId: text('presentation_id'),
+    url: text('url'),
+    warnings: jsonb('warnings').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    error: text('error'),
+    requestedBy: uuid('requested_by'),
+    include: jsonb('include').$type<Record<string, unknown>>(),
+    createdAt: createdAt(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [index('export_jobs_created_idx').on(t.createdAt), index('export_jobs_kind_idx').on(t.kind)],
+);
+
 export type AuthProvider = 'password' | 'google';
 
 export const users = pgTable('users', {
@@ -476,4 +501,5 @@ export type AvailabilitySlotRow = typeof availabilitySlots.$inferSelect;
 export type LocationProjectNoteRow = typeof locationProjectNotes.$inferSelect;
 export type PostEventFeedbackRow = typeof postEventFeedback.$inferSelect;
 export type IngestionJobRow = typeof ingestionJobs.$inferSelect;
+export type ExportJobRow = typeof exportJobs.$inferSelect;
 export type UserRow = typeof users.$inferSelect;

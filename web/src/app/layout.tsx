@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import Shell from "@/components/Shell";
+import { ExportJobsProvider } from "@/lib/exportJobs";
+import { WorkContextProvider } from "@/lib/workContext";
 
 export const metadata: Metadata = {
   title: "VenueScout",
@@ -13,7 +15,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="it">
       <body className="antialiased">
         <Providers>
-          <Shell>{children}</Shell>
+          <WorkContextProvider>
+            <ExportJobsProvider>
+              <Shell>{children}</Shell>
+            </ExportJobsProvider>
+          </WorkContextProvider>
         </Providers>
       </body>
     </html>

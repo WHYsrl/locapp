@@ -9,7 +9,9 @@ import MapView, { type MapMarker } from "@/components/MapView";
 import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ExportSlidesButton from "@/components/ExportSlidesButton";
+import WorkHereButton from "@/components/WorkHereButton";
 import { useDeleteFlow } from "@/lib/useDeleteFlow";
+import { useWorkContext } from "@/lib/workContext";
 import { Badge, Card, EmptyState, Modal, PageHeader, ScoreBadge, SegmentedControl, Spinner, btnDangerGhost, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import {
   AVAILABILITY_CLASSES,
@@ -46,6 +48,7 @@ export default function EventShortlistPage() {
   const [editingTags, setEditingTags] = useState(false);
   const [draftTags, setDraftTags] = useState<string[]>([]);
   const tagColors = useTagColors();
+  const { ctx: workCtx, setCtx: setWorkCtx, clearCtx: clearWorkCtx } = useWorkContext();
 
   const { data: event } = useQuery({ queryKey: ["event", eventId], queryFn: () => api.getEvent(eventId), enabled: !!eventId });
   const { data: shortlist, isLoading } = useQuery({
@@ -151,7 +154,21 @@ export default function EventShortlistPage() {
                 ["map", "Mappa"],
               ]}
             />
-            <ExportSlidesButton kind="event" id={eventId} />
+            <WorkHereButton
+              active={workCtx?.eventId === eventId}
+              disabled={!event}
+              onActivate={() => {
+                if (!event) return;
+                setWorkCtx({
+                  projectId: projectId,
+                  projectName: event.project?.name ?? "Progetto",
+                  eventId: eventId,
+                  eventName: event.name,
+                });
+              }}
+              onDeactivate={clearWorkCtx}
+            />
+            <ExportSlidesButton kind="event" id={eventId} name={event?.name} />
             <button className={btnDangerGhost} onClick={deleteFlow.open}>
               Elimina evento
             </button>
@@ -160,6 +177,7 @@ export default function EventShortlistPage() {
             </button>
           </>
         }
+        highlight={workCtx?.eventId === eventId}
       />
 
       {/* event tags */}

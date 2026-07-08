@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
 import { Badge, EmptyState, Modal, PageHeader, Spinner, btnPrimary, inputCls, labelCls } from "@/components/ui";
@@ -15,6 +15,15 @@ export default function ProjectsPage() {
   const [notes, setNotes] = useState("");
 
   const { data: projects, isLoading } = useQuery({ queryKey: ["projects"], queryFn: () => api.listProjects() });
+
+  // /projects?new=1 (azione rapida in dashboard): apre subito il modale.
+  // Letto da window.location per evitare il boundary Suspense di useSearchParams.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") === "1") {
+      setCreateOpen(true);
+      window.history.replaceState(null, "", "/projects");
+    }
+  }, []);
 
   const create = useMutation({
     mutationFn: () => api.createProject({ name, client_name: client || undefined, notes: notes || undefined }),

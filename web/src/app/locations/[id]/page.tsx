@@ -198,13 +198,13 @@ export default function LocationDetailPage() {
                 </p>
                 {loc.parent && <p className="mt-0.5 text-xs text-ink/40">interna a {loc.parent.name}</p>}
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <ExportSlidesButton kind="location" id={loc.id} />
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                <ExportSlidesButton kind="location" id={loc.id} name={loc.name} />
                 <Link href={`/locations/${loc.id}/edit`} className={btnSecondary}>
                   Modifica scheda
                 </Link>
                 <button
-                  className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition duration-150 hover:bg-red-50"
+                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition duration-150 hover:bg-red-50"
                   onClick={deleteFlow.open}
                 >
                   Elimina location

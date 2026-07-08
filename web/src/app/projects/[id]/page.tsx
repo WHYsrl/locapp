@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
@@ -10,7 +10,9 @@ import CollapsibleSection from "@/components/CollapsibleSection";
 import TagPicker, { TagChip, useTagColors } from "@/components/TagPicker";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ExportSlidesButton from "@/components/ExportSlidesButton";
+import WorkHereButton from "@/components/WorkHereButton";
 import { useDeleteFlow } from "@/lib/useDeleteFlow";
+import { useWorkContext } from "@/lib/workContext";
 import { Badge, EmptyState, Modal, PageHeader, Spinner, btnDangerGhost, btnPrimary, btnSecondary, inputCls, labelCls } from "@/components/ui";
 import {
   EL_STATUSES,
@@ -42,12 +44,21 @@ export default function ProjectDetailPage() {
   const [editingTags, setEditingTags] = useState(false);
   const [draftTags, setDraftTags] = useState<string[]>([]);
   const tagColors = useTagColors();
+  const { ctx: workCtx, setCtx: setWorkCtx, clearCtx: clearWorkCtx } = useWorkContext();
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
     queryFn: () => api.getProject(id),
     enabled: !!id,
   });
+
+  // /projects/:id?newEvent=1 (azione rapida in dashboard): apre il modale evento.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("newEvent") === "1") {
+      setCreateOpen(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   const { data: mapData } = useQuery({
     queryKey: ["project-map", id],
@@ -138,7 +149,12 @@ export default function ProjectDetailPage() {
         }
         action={
           <>
-            <ExportSlidesButton kind="project" id={id} />
+            <WorkHereButton
+              active={workCtx?.projectId === id && !workCtx?.eventId}
+              onActivate={() => setWorkCtx({ projectId: id, projectName: project.name })}
+              onDeactivate={clearWorkCtx}
+            />
+            <ExportSlidesButton kind="project" id={id} name={project.name} />
             <button className={btnDangerGhost} onClick={deleteFlow.open}>
               Elimina progetto
             </button>
@@ -147,6 +163,7 @@ export default function ProjectDetailPage() {
             </button>
           </>
         }
+        highlight={workCtx?.projectId === id}
       />
 
       {/* project tags */}

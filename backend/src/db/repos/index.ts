@@ -5,6 +5,7 @@ import { createProjectsRepo, type ProjectsRepo } from './projectsRepo.js';
 import { createRegistryRepo, type RegistryRepo } from './registryRepo.js';
 import { createTagsRepo, type TagsRepo } from './tagsRepo.js';
 import { createIngestionRepo, type IngestionRepo } from './ingestionRepo.js';
+import { createExportJobsRepo, type ExportJobsRepo } from './exportJobsRepo.js';
 import { createSearchRepo, type SearchRepo } from './searchRepo.js';
 
 export interface Repos {
@@ -14,6 +15,7 @@ export interface Repos {
   registry: RegistryRepo;
   tags: TagsRepo;
   ingestion: IngestionRepo;
+  exportJobs: ExportJobsRepo;
   search: SearchRepo;
 }
 
@@ -25,6 +27,7 @@ export function createRepos(db: Db): Repos {
     registry: createRegistryRepo(db),
     tags: createTagsRepo(db),
     ingestion: createIngestionRepo(db),
+    exportJobs: createExportJobsRepo(db),
     search: createSearchRepo(db),
   };
 }

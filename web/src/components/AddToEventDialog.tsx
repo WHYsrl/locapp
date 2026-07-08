@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/lib/api";
+import { useWorkContext } from "@/lib/workContext";
 import { Modal, btnPrimary, inputCls, labelCls } from "./ui";
 import { formatDate } from "@/lib/labels";
 
@@ -18,9 +19,25 @@ export default function AddToEventDialog({
   locationName: string;
 }) {
   const qc = useQueryClient();
+  const { ctx: workCtx } = useWorkContext();
   const [projectId, setProjectId] = useState("");
   const [eventId, setEventId] = useState("");
   const [done, setDone] = useState<string | null>(null);
+  const [prefilled, setPrefilled] = useState(false);
+
+  // Contesto di lavoro attivo → preseleziona progetto/evento all'apertura.
+  useEffect(() => {
+    if (!open) {
+      setPrefilled(false);
+      return;
+    }
+    if (workCtx && !projectId && !eventId) {
+      setProjectId(workCtx.projectId);
+      if (workCtx.eventId) setEventId(workCtx.eventId);
+      setPrefilled(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const { data: projects } = useQuery({
     queryKey: ["projects"],
@@ -66,6 +83,12 @@ export default function AddToEventDialog({
           <p className="text-sm text-ink/60">
             Location: <span className="font-semibold text-ink">{locationName}</span>
           </p>
+          {prefilled && workCtx && (
+            <p className="rounded-lg bg-berry/[0.06] px-3 py-2 text-xs font-medium text-berry">
+              Preimpostato dal contesto di lavoro: {workCtx.projectName}
+              {workCtx.eventName ? ` · ${workCtx.eventName}` : ""}
+            </p>
+          )}
           <div>
             <label className={labelCls}>Progetto</label>
             <select

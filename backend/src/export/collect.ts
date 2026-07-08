@@ -38,6 +38,9 @@ export interface ExportPoiDistance {
   km: number;
   minutes_car: number;
   estimated: boolean;
+  /** POI coordinates (markers/routes on the export static map). */
+  lon: number | null;
+  lat: number | null;
 }
 
 /** A photo reference before URL resolution: `source` is an S3 key or an absolute URL. */
@@ -69,6 +72,8 @@ export interface ExportLocationCard {
   smart_tags: string[] | null;
   impressions: string | null;
   has_geom: boolean;
+  /** Location coordinates when known (origin of the POI route map). */
+  geo: { lon: number; lat: number } | null;
   spaces: ExportSpace[];
   contacts: Array<{ name: string; role: string; phone: string | null; email: string | null }>;
   suppliers: Array<{ company_name: string; category: string; requirement: string }>;
@@ -78,6 +83,8 @@ export interface ExportLocationCard {
   photo_urls: string[];
   /** Filled by resolveExportImages (absolute public map-thumb route). */
   map_url: string | null;
+  /** Filled by resolvePoiMaps (Google Static Map with route polylines). */
+  poi_map_url: string | null;
   poi_distances?: ExportPoiDistance[];
 }
 
@@ -91,12 +98,16 @@ export interface ExportShortlistVenue {
   match_score: string | null;
   notes: string | null;
   has_geom: boolean;
+  /** Venue coordinates when known (origin of the POI route map). */
+  geo: { lon: number; lat: number } | null;
   capacities?: ExportCapacity[];
   quotes?: Array<{ amount: string | null; currency: string; status: string }>;
   poi_distances?: ExportPoiDistance[];
   photos: ExportPhoto[];
   photo_urls: string[];
   map_url: string | null;
+  /** Filled by resolvePoiMaps (Google Static Map with route polylines). */
+  poi_map_url: string | null;
 }
 
 export interface ExportEvent {
@@ -170,6 +181,8 @@ function poiDistancesFrom(
         km: round1(km),
         minutes_car: estimatedMinutes(km),
         estimated: true,
+        lon: p.lon,
+        lat: p.lat,
       };
     })
     .sort((a, b) => a.km - b.km);
@@ -234,9 +247,11 @@ async function collectShortlist(
       match_score: row.matchScore ?? null,
       notes: row.notes ?? null,
       has_geom: origin != null,
+      geo: origin,
       photos: photoRefs(mediaRows, VENUE_PHOTO_CAP),
       photo_urls: [],
       map_url: null,
+      poi_map_url: null,
     };
     if (include.capacities) venue.capacities = capacityByLocation.get(row.locationId) ?? [];
     if (include.prices) {
@@ -301,6 +316,7 @@ export async function collectExportData(
       smart_tags: location.smartTags,
       impressions: location.impressions,
       has_geom: origin != null,
+      geo: origin,
       spaces: relations.spaceRows.map((s) => ({
         name: s.name,
         kind: s.kind,
@@ -323,6 +339,7 @@ export async function collectExportData(
       photos: include.photos ? photoRefs(relations.mediaRows, CARD_PHOTO_CAP) : [],
       photo_urls: [],
       map_url: null,
+      poi_map_url: null,
     };
     if (include.prices) {
       card.price_lists = relations.priceListRows.map((p) => ({ name: p.name, items: p.items ?? [] }));
@@ -389,15 +406,18 @@ export async function collectExportData(
   };
 }
 
-interface ImageBearingCard {
+export interface ImageBearingCard {
   has_geom: boolean;
+  geo: { lon: number; lat: number } | null;
   photos: ExportPhoto[];
   photo_urls: string[];
   map_url: string | null;
+  poi_map_url: string | null;
+  poi_distances?: ExportPoiDistance[];
 }
 
 /** Every venue-like card in the export data (uniform photo/map handling). */
-function venueCards(data: ExportData): Array<{ locationId: string; card: ImageBearingCard }> {
+export function venueCards(data: ExportData): Array<{ locationId: string; card: ImageBearingCard }> {
   if (data.kind === 'location') {
     return [{ locationId: data.location.id, card: data.location }];
   }

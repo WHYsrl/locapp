@@ -1,8 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { collectExportData, resolveExportImages } from '../export/collect.js';
-import { buildDeckContent } from '../export/copywriter.js';
-import { createPresentation } from '../export/slides.js';
+import { notFound } from '../lib/errors.js';
+import { paginated, parsePagination, PaginationQuery } from '../lib/pagination.js';
+import type { Repos } from '../db/repos/index.js';
+import type { ExportJobRow } from '../db/schema.js';
+import type { ExportKind } from '../export/collect.js';
+import { processExportJob } from '../export/process.js';
 
 const IncludeSchema = z
   .object({
@@ -17,8 +20,9 @@ const IncludeSchema = z
 const ExportSlidesBody = z.object({
   /**
    * Google OAuth access token (scope https://www.googleapis.com/auth/drive.file)
-   * obtained by the browser. Used only as a Bearer header towards the Slides
-   * API — NEVER logged and never persisted.
+   * obtained by the browser. Handed to the async processor IN MEMORY ONLY and
+   * used solely as a Bearer header towards the Slides API — NEVER logged and
+   * NEVER persisted (not on the export_jobs row, not anywhere else).
    */
   access_token: z.string().min(1),
   kind: z.enum(['location', 'event', 'project']),
@@ -26,26 +30,97 @@ const ExportSlidesBody = z.object({
   include: IncludeSchema,
 });
 
+const JobsListQuery = PaginationQuery.extend({
+  kind: z.enum(['location', 'event', 'project']).optional(),
+  q: z.string().optional(),
+});
+
+/** Resolves the display name of the export target; 404 when the id is unknown. */
+async function resolveTargetName(repos: Repos, kind: ExportKind, id: string): Promise<string> {
+  if (kind === 'location') {
+    const location = await repos.locations.getById(id);
+    if (!location) throw notFound('Location');
+    return location.name;
+  }
+  if (kind === 'event') {
+    const event = await repos.projects.getEvent(id);
+    if (!event) throw notFound('Event');
+    return event.name;
+  }
+  const project = await repos.projects.getById(id);
+  if (!project) throw notFound('Project');
+  return project.name;
+}
+
+/** Job row → API shape (contract agreed with web; token never present on rows). */
+const jobToApi = (job: ExportJobRow) => ({
+  id: job.id,
+  kind: job.kind,
+  target_id: job.targetId,
+  target_name: job.targetName,
+  status: job.status,
+  url: job.url,
+  presentation_id: job.presentationId,
+  warnings: job.warnings ?? [],
+  error: job.error,
+  created_at: job.createdAt instanceof Date ? job.createdAt.toISOString() : job.createdAt,
+  finished_at: job.finishedAt instanceof Date ? job.finishedAt.toISOString() : (job.finishedAt ?? null),
+});
+
 export async function exportRoutes(app: FastifyInstance): Promise<void> {
-  const { repos, ai, storage } = app.deps;
+  const { repos } = app.deps;
 
-  // AI → Google Slides export: collect → copywrite (AI, non-fatal) → Slides REST.
-  app.post('/export/slides', async (req) => {
+  // AI → Google Slides export, async job: validate → insert export_jobs row →
+  // fire-and-forget processing (like /ingest) → 202 {job_id}; poll /export/jobs/:id.
+  app.post('/export/slides', async (req, reply) => {
     const body = ExportSlidesBody.parse(req.body);
+    const targetName = await resolveTargetName(repos, body.kind, body.id);
 
-    const data = await collectExportData(repos, body.kind, body.id, body.include);
-    const warnings = await resolveExportImages(data, {
-      storage,
-      publicBaseUrl: app.deps.publicBaseUrl,
-      include: body.include,
+    const job = await repos.exportJobs.create({
+      kind: body.kind,
+      targetId: body.id,
+      targetName,
+      status: 'pending',
+      include: body.include as Record<string, unknown>,
+      requestedBy: req.user?.id ?? null,
     });
 
-    const { deck, warnings: copyWarnings } = await buildDeckContent(ai, data, body.include);
-    warnings.push(...copyWarnings);
+    // The access token travels only as a function argument (in memory), never on the row.
+    void processExportJob(
+      job.id,
+      { kind: body.kind, id: body.id, include: body.include },
+      body.access_token,
+      {
+        repos,
+        ai: app.deps.ai,
+        storage: app.deps.storage,
+        fetchFn: app.deps.fetchFn,
+        publicBaseUrl: app.deps.publicBaseUrl,
+        googleMapsApiKey: app.deps.googleMapsApiKey,
+      },
+    ).catch((err) => app.log.error(err));
 
-    const fetchFn = app.deps.fetchFn ?? fetch;
-    const created = await createPresentation(fetchFn, body.access_token, deck);
+    reply.status(202);
+    return { job_id: job.id };
+  });
 
-    return { url: created.url, presentation_id: created.presentationId, warnings };
+  app.get('/export/jobs/:id', async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const job = await repos.exportJobs.getById(id);
+    if (!job) throw notFound('Export job');
+    return jobToApi(job);
+  });
+
+  // Export repository: newest first, ?kind= filter, ?q= on target_name (ilike).
+  app.get('/export/jobs', async (req) => {
+    const query = JobsListQuery.parse(req.query);
+    const p = parsePagination(query);
+    const { rows, total } = await repos.exportJobs.list({
+      kind: query.kind,
+      q: query.q,
+      offset: p.offset,
+      limit: p.limit,
+    });
+    return paginated(rows.map(jobToApi), total, p);
   });
 }
