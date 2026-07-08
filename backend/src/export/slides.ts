@@ -408,6 +408,13 @@ export async function createPresentation(
   accessToken: string,
   deck: DeckContent,
 ): Promise<CreatedPresentation> {
+  // Google Slides rejects createImage URLs over 2K bytes: drop any oversized
+  // URL up front (the slide simply renders without that image).
+  const MAX_IMAGE_URL_BYTES = 2000;
+  for (const slide of deck.slides) {
+    slide.image_urls = slide.image_urls.filter((u) => u.length <= MAX_IMAGE_URL_BYTES);
+  }
+
   const created = await googlePost(fetchFn, accessToken, SLIDES_ENDPOINT, { title: deck.title });
   const presentationId = created['presentationId'];
   if (typeof presentationId !== 'string' || presentationId.length === 0) {

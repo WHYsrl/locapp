@@ -120,7 +120,10 @@ export default function EventShortlistPage() {
     [mapData]
   );
 
-  const inShortlist = new Set((shortlist ?? []).map((el) => el.location.id));
+  // Guard: entries whose joined location is missing (e.g. force-deleted
+  // location still referenced) must not crash the page.
+  const entries = (shortlist ?? []).filter((el) => el.location?.id);
+  const inShortlist = new Set(entries.map((el) => el.location.id));
 
   return (
     <div>
@@ -234,11 +237,11 @@ export default function EventShortlistPage() {
         )
       ) : view === "compare" ? (
         <CompareView compare={compare} />
-      ) : (shortlist ?? []).length === 0 ? (
+      ) : entries.length === 0 ? (
         <EmptyState title="Shortlist vuota" hint="Aggiungi location dalla ricerca AI o manualmente." />
       ) : (
         <div className="space-y-5">
-          {(shortlist ?? []).map((el) => (
+          {entries.map((el) => (
             <ShortlistCard key={el.id} el={el} onChanged={invalidate} />
           ))}
         </div>

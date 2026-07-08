@@ -244,12 +244,21 @@ export function googlePoiStaticMapUrl(
       `color:${STATIC_MAP_POI_COLOR}|size:small|${pois.map((p) => `${p.lat},${p.lng}`).join('|')}`,
     );
   }
+  const key = `&${new URLSearchParams({ key: apiKey }).toString()}`;
+  // Encoded polylines can be very long; Slides' createImage rejects URLs over
+  // 2K bytes. Add routes only while the final URL stays within budget
+  // (markers are always kept, so the map degrades gracefully).
+  let url = `${STATIC_MAP_ENDPOINT}?${params.toString()}`;
   for (const polyline of polylines) {
-    params.append('path', `enc:${polyline}`);
+    const withPath = `${url}&${new URLSearchParams({ path: `enc:${polyline}` }).toString()}`;
+    if (withPath.length + key.length > STATIC_MAP_URL_BUDGET) break;
+    url = withPath;
   }
-  params.append('key', apiKey);
-  return `${STATIC_MAP_ENDPOINT}?${params.toString()}`;
+  return `${url}${key}`;
 }
+
+/** Slides' createImage rejects URLs over 2K bytes: keep a safety margin. */
+export const STATIC_MAP_URL_BUDGET = 1900;
 
 /** Maps Static API URL (480x240, zoom 15, berry marker). Contains the key: server-side use only. */
 export function googleStaticMapUrl(
