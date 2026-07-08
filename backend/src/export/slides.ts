@@ -145,7 +145,7 @@ function coverPhotoRequests(slideId: string, slide: DeckSlide, subtitle: string)
     requests.push({
       createShape: {
         objectId: bandId,
-        shapeType: 'RECT',
+        shapeType: 'RECTANGLE',
         elementProperties: elementProps(slideId, 0, 245, PAGE_W, 120),
       },
     });
@@ -153,7 +153,7 @@ function coverPhotoRequests(slideId: string, slide: DeckSlide, subtitle: string)
   } else {
     // Fallback: plain berry background covering the whole page.
     requests.push({
-      createShape: { objectId: bandId, shapeType: 'RECT', elementProperties: fullBleedProps(slideId) },
+      createShape: { objectId: bandId, shapeType: 'RECTANGLE', elementProperties: fullBleedProps(slideId) },
     });
     requests.push(berryFill(bandId, 1));
   }
